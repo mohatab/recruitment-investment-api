@@ -51,7 +51,7 @@ const Experience = require("../models/Experience");
 
 /**
  * @swagger
- * /api/mohamed/experience/submit-experience:
+ * /api/mohamed/experience:
  *   post:
  *     summary: تقديم خبرة عمل جديدة
  *     tags: [Experience]
@@ -97,7 +97,7 @@ const Experience = require("../models/Experience");
  *       400:
  *         description: خطأ في البيانات المقدمة
  */
-router.post("/submit-experience", async (req, res) => {
+router.post("/", async (req, res) => {
   try {
     const {
       yearsOfExperience,

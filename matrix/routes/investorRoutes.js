@@ -26,7 +26,7 @@ const Investor = require("../models/Investor");
  *       400:
  *         description: خطأ في البيانات المدخلة
  */
-router.post("/investor", async (req, res) => {
+router.post("/", async (req, res) => {
   try {
     const investor = new Investor(req.body);
     await investor.save();
@@ -38,7 +38,7 @@ router.post("/investor", async (req, res) => {
 
 /**
  * @swagger
- * /api/matrix/investors:
+ * /api/matrix/investor:
  *   get:
  *     tags: [Investors]
  *     summary: الحصول على جميع المستثمرين
@@ -48,7 +48,7 @@ router.post("/investor", async (req, res) => {
  *       500:
  *         description: خطأ في الخادم
  */
-router.get("/investors", async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const investors = await Investor.find();
     res.status(200).json(investors);
@@ -57,7 +57,28 @@ router.get("/investors", async (req, res) => {
   }
 });
 
-router.get("/investor/:id", async (req, res) => {
+/**
+ * @swagger
+ * /api/matrix/investor/{id}:
+ *   get:
+ *     tags: [Investors]
+ *     summary: الحصول على بيانات مستثمر محدد
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: معرف المستثمر
+ *     responses:
+ *       200:
+ *         description: تم جلب بيانات المستثمر بنجاح
+ *       404:
+ *         description: المستثمر غير موجود
+ *       500:
+ *         description: خطأ في الخادم
+ */
+router.get("/:id", async (req, res) => {
   try {
     const investor = await Investor.findById(req.params.id);
     if (!investor) {

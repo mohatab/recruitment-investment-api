@@ -36,16 +36,16 @@ app.use((req, res, next) => {
 });
 
 // راوتس محمود
+app.use("/api/mahmoud", require("./mahmoud/routes/postjop"));
 app.use("/api/mahmoud/apply", require("./mahmoud/routes/apply"));
 app.use("/api/mahmoud/contact", require("./mahmoud/routes/contact"));
 app.use("/api/mahmoud/signup", require("./mahmoud/routes/signupwithcv"));
-app.use("/api/mahmoud/jobs", require("./mahmoud/routes/postjop"));
 app.use(
   "/api/mahmoud/prediction",
   require("./mahmoud/routes/successprediction")
 );
 app.use(
-  "/api/mahmoud/investment",
+  "/api/mahmoud/investment-criteria",
   require("./mahmoud/routes/investmentcriteria")
 );
 
@@ -55,8 +55,8 @@ app.use("/api/matrix/forms", require("./matrix/routes/forms"));
 app.use("/api/matrix/payment", require("./matrix/routes/payment"));
 app.use("/api/matrix/password", require("./matrix/routes/password"));
 app.use("/api/matrix/password-reset", require("./matrix/routes/passwordReset"));
-app.use("/api/matrix/investors", require("./matrix/routes/investorRoutes"));
-app.use("/api/matrix/startups", require("./matrix/routes/startupRoutes"));
+app.use("/api/matrix/investor", require("./matrix/routes/investorRoutes"));
+app.use("/api/matrix/startup", require("./matrix/routes/startupRoutes"));
 
 // راوتس محمد
 app.use(
@@ -67,7 +67,7 @@ app.use("/api/mohamed/chat", require("./mohamed/routes/chat").router);
 app.use("/api/mohamed/experience", require("./mohamed/routes/experience"));
 app.use("/api/mohamed/tellyour", require("./mohamed/routes/tellyour"));
 app.use("/api/mohamed/users", require("./mohamed/routes/userRoutes"));
-app.use("/api/mohamed/investors", require("./mohamed/routes/investorRoutes"));
+app.use("/api/mohamed/investor", require("./mohamed/routes/investorRoutes"));
 
 // إعداد Socket.IO للإشعارات
 io.on("connection", (socket) => {

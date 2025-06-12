@@ -24,7 +24,25 @@ router.use((err, req, res, next) => {
 router.use("/investor", investorRoutes);
 router.use("/startup", startupRoutes);
 
-// Health check endpoint
+/**
+ * @swagger
+ * /api/matrix/forms/health:
+ *   get:
+ *     tags: [Forms]
+ *     summary: التحقق من حالة الخدمة
+ *     description: نقطة نهاية للتحقق من أن الخدمة تعمل بشكل صحيح
+ *     responses:
+ *       200:
+ *         description: الخدمة تعمل بشكل صحيح
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: ok
+ */
 router.get("/health", (req, res) => {
   res.status(200).json({ status: "ok" });
 });

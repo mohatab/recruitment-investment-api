@@ -16,29 +16,89 @@ const MatrixStartup = require("../models/Startup");
  *             type: object
  *             required:
  *               - name
+ *               - email
+ *               - description
  *             properties:
  *               name:
  *                 type: string
  *                 description: اسم الشركة الناشئة
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: البريد الإلكتروني للشركة
+ *               description:
+ *                 type: string
+ *                 description: وصف الشركة
+ *               pitchTitle:
+ *                 type: string
+ *                 description: عنوان العرض التقديمي
+ *               website:
+ *                 type: string
+ *                 description: الموقع الإلكتروني
+ *               location:
+ *                 type: string
+ *                 description: الموقع
+ *               mobileNumber:
+ *                 type: string
+ *                 description: رقم الهاتف المحمول
+ *               industry1:
+ *                 type: string
+ *                 description: المجال الأول
+ *               industry2:
+ *                 type: string
+ *                 description: المجال الثاني
+ *               stage:
+ *                 type: string
+ *                 description: مرحلة الشركة
+ *               idealInvestorRole:
+ *                 type: string
+ *                 description: دور المستثمر المثالي
+ *               previousRaised:
+ *                 type: number
+ *                 description: المبلغ المجمع سابقاً
+ *               totalRaising:
+ *                 type: number
+ *                 description: إجمالي المبلغ المطلوب
+ *               raisedSoFar:
+ *                 type: number
+ *                 description: المبلغ المجمع حتى الآن
+ *               minInvestment:
+ *                 type: number
+ *                 description: الحد الأدنى للاستثمار
  *     responses:
  *       201:
  *         description: تم إنشاء الشركة الناشئة بنجاح
  *       400:
  *         description: خطأ في البيانات المدخلة
  */
-router.post("/startup", async (req, res) => {
+router.post("/", async (req, res) => {
   try {
+    const { name, email, description } = req.body;
+
+    // التحقق من وجود الحقول المطلوبة
+    if (!name || !email || !description) {
+      return res.status(400).json({
+        error: "الحقول التالية مطلوبة: name, email, description",
+      });
+    }
+
     const startup = new MatrixStartup(req.body);
     await startup.save();
     res.status(201).json(startup);
   } catch (err) {
+    // التحقق من نوع الخطأ
+    if (err.code === 11000) {
+      return res.status(400).json({
+        error: "البريد الإلكتروني مستخدم بالفعل",
+      });
+    }
     res.status(400).json({ error: err.message });
   }
 });
 
 /**
  * @swagger
- * /api/matrix/startups:
+ * /api/matrix/startup:
  *   get:
  *     tags: [Startups]
  *     summary: الحصول على جميع الشركات الناشئة
@@ -48,7 +108,7 @@ router.post("/startup", async (req, res) => {
  *       500:
  *         description: خطأ في الخادم
  */
-router.get("/startups", async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const startups = await MatrixStartup.find();
     res.status(200).json(startups);
@@ -78,7 +138,7 @@ router.get("/startups", async (req, res) => {
  *       500:
  *         description: خطأ في الخادم
  */
-router.get("/startup/:id", async (req, res) => {
+router.get("/:id", async (req, res) => {
   try {
     const startup = await MatrixStartup.findById(req.params.id);
     if (!startup) {

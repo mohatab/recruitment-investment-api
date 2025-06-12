@@ -20,7 +20,48 @@ let fakeUser = {
   passwordHash: "$2b$10$yEhA9kXfBMOdQreId4LZNOv9kzL4xCK4eVW6ABsWQrrDCDPOWD7aS", // hashed password: "oldpassword"
 };
 
-// ✅ Change Password API
+/**
+ * @swagger
+ * /api/matrix/password/change:
+ *   post:
+ *     tags: [Password]
+ *     summary: تغيير كلمة المرور
+ *     description: تغيير كلمة المرور للمستخدم بعد التحقق من كلمة المرور القديمة
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *               - oldPassword
+ *               - newPassword
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 description: معرف المستخدم
+ *               oldPassword:
+ *                 type: string
+ *                 description: كلمة المرور القديمة
+ *               newPassword:
+ *                 type: string
+ *                 description: كلمة المرور الجديدة
+ *     responses:
+ *       200:
+ *         description: تم تغيير كلمة المرور بنجاح
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       401:
+ *         description: كلمة المرور القديمة غير صحيحة
+ *       404:
+ *         description: المستخدم غير موجود
+ */
 router.post("/change", async (req, res) => {
   const { userId, oldPassword, newPassword } = req.body;
 

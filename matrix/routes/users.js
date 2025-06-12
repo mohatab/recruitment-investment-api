@@ -36,6 +36,52 @@ router.get("/", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/matrix/users:
+ *   post:
+ *     tags: [Users]
+ *     summary: إنشاء مستخدم جديد
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - email
+ *               - password
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 description: اسم المستخدم
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: البريد الإلكتروني
+ *               password:
+ *                 type: string
+ *                 description: كلمة المرور
+ *     responses:
+ *       200:
+ *         description: تم إنشاء المستخدم بنجاح
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                 name:
+ *                   type: string
+ *                 email:
+ *                   type: string
+ *       400:
+ *         description: خطأ في البيانات المدخلة
+ *       500:
+ *         description: خطأ في الخادم
+ */
 router.post("/", async (req, res) => {
   try {
     const { error } = validate(req.body);
