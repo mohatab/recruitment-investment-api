@@ -1,55 +1,176 @@
-# المشروع الموحد
+# Recruitment & Investment Platform API
 
-مشروع يجمع بين ثلاثة أنظمة رئيسية: نظام محمود، نظام محمد، ونظام ماتريكس.
+A Node.js/Express REST API combining a recruitment platform (job postings, CV-based
+applications) with an investor–startup management system, real-time notifications,
+and in-app messaging.
 
-## المميزات
+## Overview
 
-- نظام إشعارات في الوقت الفعلي
-- نظام محادثات متكامل
-- إدارة المستخدمين والمستثمرين
-- نظام خبرات وقصص النجاح
-- واجهة برمجة تطبيقات RESTful
-- توثيق Swagger مدمج
+This API was built as three related backend modules sharing one Express app,
+one MongoDB database, and one Swagger/OpenAPI spec:
 
-## المتطلبات
+- **Recruitment** (`/api/mahmoud/*`) — job postings, CV/manual signup, job
+  applications, contact capture, and a simple startup-success prediction endpoint.
+- **Investor & Startup management** (`/api/matrix/*`) — investor and startup
+  profiles, investment criteria, password reset, and Stripe-based payments.
+- **Notifications & Messaging** (`/api/mohamed/*`) — real-time notifications and
+  chat over Socket.IO, user profiles, work experience, and story sharing.
 
-- Node.js (v14 أو أحدث)
-- MongoDB
-- npm أو yarn
+The route prefixes (`mahmoud`, `matrix`, `mohamed`) are the original module names
+from development and are kept as-is below since they match the routes in the code.
 
-## التثبيت
+## Features
 
-1. استنسخ المشروع
+- JWT-based authentication, including CV-upload signup (`multipart/form-data`)
+- Job posting, browsing, and application workflow
+- Startup and investor profile management
+- Stripe payment methods, charges, and refunds
+- Real-time notifications and chat via Socket.IO
+- Password reset via emailed links (Nodemailer)
+- Swagger/OpenAPI docs generated from route annotations
 
-```bash
-git clone https://github.com/yourusername/unified-project.git
-cd unified-project
+## Tech Stack
+
+- **Node.js** / **Express**
+- **MongoDB** + **Mongoose**
+- **Socket.IO** — real-time notifications and chat
+- **JWT** + **bcrypt** — authentication
+- **Stripe** — payments
+- **Multer** — file uploads (CVs, images)
+- **Nodemailer** — password-reset emails
+- **Joi** — request validation
+- **swagger-jsdoc** + **swagger-ui-express** — API documentation
+
+## Project Structure
+
+```
+mahmoud/    # Recruitment module: routes + models (User, Job)
+matrix/     # Investor/startup module: routes + models, payments, email utility
+mohamed/    # Notifications, chat, experience, and user-profile module
+shared/     # Shared MongoDB connection (shared/db.js)
+swagger.js  # OpenAPI spec generation from JSDoc route comments
+index.js    # App entry point: mounts all routes, Socket.IO, error handling
 ```
 
-2. ثبت الاعتمادات
+## Getting Started
+
+### Prerequisites
+
+- Node.js v14+
+- MongoDB (local or hosted)
+
+### Setup
 
 ```bash
+git clone https://github.com/mohatab/recruitment-investment-api.git
+cd recruitment-investment-api
 npm install
+cp .env.example .env   # fill in real values
+node index.js          # or: npx nodemon index.js (dev, dev-only dependency)
 ```
 
-3. أنشئ ملف `.env` وأضف المتغيرات المطلوبة
+The API runs at `http://localhost:3000`, with interactive Swagger docs at
+`http://localhost:3000/api-docs`.
 
-```env
-PORT=3000
-MONGODB_URI=your_mongodb_connection_string
-JWT_SECRET=your_jwt_secret
-STRIPE_SECRET_KEY=your_stripe_secret_key
-SOCKET_IO_PORT=3001
-CLOUDINARY_URL=your_cloudinary_url
+## Environment Variables
+
+See [`.env.example`](./.env.example). Every variable listed there is read
+directly by the app (verified against source, not just documentation):
+
+| Variable          | Used for                                              |
+| ------------------ | ------------------------------------------------------ |
+| `PORT`             | HTTP server port (defaults to `3000`)                  |
+| `MONGODB_URI`      | MongoDB connection string                               |
+| `JWT_SECRET`       | Signing secret for auth tokens                          |
+| `STRIPE_SECRET_KEY`| Stripe API key for payments                              |
+| `BASE_URL`         | Base URL used to build password-reset links             |
+| `HOST` / `SERVICE` | SMTP host/service for outgoing email (Nodemailer)        |
+| `USER` / `PASS`    | SMTP credentials for outgoing email                      |
+
+## API Documentation
+
+Full interactive documentation (generated from the route annotations) is served
+at `/api-docs` when the app is running. Authentication uses a JWT bearer token:
+
+```
+Authorization: Bearer {token}
 ```
 
-4. شغل المشروع
+### Example: register a user
 
-```bash
-node index.js
+```
+POST /api/mahmoud/signup/register-manually
+Content-Type: application/json
+
+{ "username": "string", "email": "string", "password": "string" }
 ```
 
-## الوثائق
+Response `201`:
 
-- يمكنك الوصول إلى وثائق API على: `http://localhost:3000/api-docs`
-- للمزيد من التفاصيل، راجع ملف `API_DOCUMENTATION.md`
+```json
+{ "message": "Registered successfully", "token": "JWT_TOKEN" }
+```
+
+### Example: create a startup profile
+
+```
+POST /api/matrix/forms/startup/startup
+Content-Type: application/json
+
+{ "name": "string", "email": "string", "description": "string" }
+```
+
+Response `201`:
+
+```json
+{ "_id": "string", "name": "string", "email": "string", "description": "string", "createdAt": "date" }
+```
+
+### Endpoint groups
+
+| Module | Base path | Covers |
+| --- | --- | --- |
+| Recruitment | `/api/mahmoud/*` | signup/login, job posting & listing, applications, contact form, success prediction |
+| Investor/Startup | `/api/matrix/*` | users, startups, investors, investment criteria, password reset, payments |
+| Notifications & Messaging | `/api/mohamed/*` | notifications, chat (Socket.IO), experience, stories, user profiles, investors |
+
+### Common status codes
+
+`200` success · `201` created · `400` invalid input · `401` unauthorized ·
+`403` forbidden · `404` not found · `500` server error
+
+### Error response shape
+
+```json
+{ "error": "message", "status": 400 }
+```
+
+## Database
+
+MongoDB via Mongoose. Each module currently defines its own models — there is
+some duplication across modules (see Future Improvements):
+
+- **mahmoud**: `User`, `Job`
+- **matrix**: `User`, `Investor`, `Startup`, `Token` (password-reset tokens)
+- **mohamed**: `User`, `Investor`, `Experience`, `Notification`, `Message`, story/content models
+
+## Testing
+
+No automated test suite exists yet (tracked in Future Improvements below).
+
+## Deployment
+
+Not currently deployed.
+
+## License
+
+MIT — see [`LICENSE`](./LICENSE).
+
+## Future Improvements
+
+- Add an automated test suite (Jest + Supertest) and CI
+- Consolidate the duplicate per-module `User` models into a single shared
+  auth/user model
+- Move uploaded files out of the repository into a dedicated storage service
+- Centralize error handling into shared middleware for a consistent error
+  response shape across all three modules
