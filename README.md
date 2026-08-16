@@ -1,5 +1,7 @@
 # Recruitment & Investment Platform API
 
+[![CI](https://github.com/mohatab/recruitment-investment-api/actions/workflows/ci.yml/badge.svg)](https://github.com/mohatab/recruitment-investment-api/actions/workflows/ci.yml)
+
 A Node.js/Express REST API combining a recruitment platform (job postings, CV-based
 applications) with an investor–startup management system, real-time notifications,
 and in-app messaging.
@@ -81,7 +83,7 @@ directly by the app (verified against source, not just documentation):
 | ------------------ | ------------------------------------------------------ |
 | `PORT`             | HTTP server port (defaults to `3000`)                  |
 | `MONGODB_URI`      | MongoDB connection string                               |
-| `JWT_SECRET`       | Signing secret for auth tokens                          |
+| `JWT_SECRET`       | Signing secret for auth tokens — **required**, the app refuses to start without it (no default fallback) |
 | `STRIPE_SECRET_KEY`| Stripe API key for payments                              |
 | `BASE_URL`         | Base URL used to build password-reset links             |
 | `HOST` / `SERVICE` | SMTP host/service for outgoing email (Nodemailer)        |
@@ -156,7 +158,20 @@ some duplication across modules (see Future Improvements):
 
 ## Testing
 
-No automated test suite exists yet (tracked in Future Improvements below).
+```bash
+npm test
+```
+
+Runs a Jest + Supertest smoke suite covering request validation and auth
+guards (missing-field validation, missing-token rejection, 404 handling).
+These run against the Express app directly and don't require a live
+database connection. Database-backed integration tests are not in place
+yet (see Future Improvements).
+
+## CI
+
+GitHub Actions runs the test suite on every push and pull request to
+`master` — see [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).
 
 ## Deployment
 
@@ -168,7 +183,8 @@ MIT — see [`LICENSE`](./LICENSE).
 
 ## Future Improvements
 
-- Add an automated test suite (Jest + Supertest) and CI
+- Add database-backed integration tests (e.g. with an in-memory MongoDB
+  instance) covering the routes that read/write data
 - Consolidate the duplicate per-module `User` models into a single shared
   auth/user model
 - Move uploaded files out of the repository into a dedicated storage service
