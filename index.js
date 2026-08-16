@@ -16,12 +16,17 @@ const cors = require("cors");
 // تعيين القيم الافتراضية للمتغيرات البيئية
 process.env.MONGODB_URI =
   process.env.MONGODB_URI || "mongodb://localhost:27017/unified-project";
-process.env.JWT_SECRET = process.env.JWT_SECRET || "default-secret-key-123";
 process.env.STRIPE_SECRET_KEY =
   process.env.STRIPE_SECRET_KEY || "sk_test_your_stripe_key";
 
-// اتصال بقاعدة البيانات
-connectDB();
+// JWT_SECRET must never fall back to a known default: a known secret lets
+// anyone forge valid auth tokens. Fail fast instead.
+if (!process.env.JWT_SECRET) {
+  console.error(
+    "JWT_SECRET environment variable is required — refusing to start with an insecure default."
+  );
+  process.exit(1);
+}
 
 // ميدل وير
 app.use(cors());
@@ -151,8 +156,15 @@ process.on("SIGINT", async () => {
   process.exit(0);
 });
 
-// تشغيل السيرفر
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
+// Only connect to the DB and bind a port when run directly (`node index.js`).
+// When imported (e.g. by tests via supertest), neither side effect runs.
+if (require.main === module) {
+  connectDB();
+
+  const PORT = process.env.PORT || 3000;
+  server.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+  });
+}
+
+module.exports = app;

@@ -27,10 +27,7 @@ function authMiddleware(req, res, next) {
     return res.status(401).json({ error: "Authentication token not provided" });
 
   try {
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "your_jwt_secret"
-    );
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.userId = decoded.id;
     next();
   } catch (err) {
@@ -65,10 +62,7 @@ router.post("/register-cv", (req, res) => {
 
       const user = new User({ email, cv: req.file.path });
       await user.save();
-      const token = jwt.sign(
-        { id: user._id },
-        process.env.JWT_SECRET || "your_jwt_secret"
-      );
+      const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
       res
         .status(201)
         .json({ message: "Successfully registered with CV", token });
@@ -93,10 +87,7 @@ router.post("/register-manually", async (req, res) => {
 
     const user = new User({ username, email, password });
     await user.save();
-    const token = jwt.sign(
-      { id: user._id },
-      process.env.JWT_SECRET || "your_jwt_secret"
-    );
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
     res
       .status(201)
       .json({ message: "Manual registration completed successfully", token });
@@ -121,10 +112,7 @@ router.post("/login", async (req, res) => {
     }
 
     if (await bcrypt.compare(password, user.password)) {
-      const token = jwt.sign(
-        { id: user._id },
-        process.env.JWT_SECRET || "your_jwt_secret"
-      );
+      const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
       res.json({ message: "Logged in successfully", token });
     } else {
       res.status(401).json({ error: "Invalid credentials" });
