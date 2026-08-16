@@ -3,7 +3,7 @@ const router = express.Router();
 
 // استيراد النماذج
 const Userchat = require("../models/userchat");
-const Message = require("../models/Message");
+const Message = require("../models/message");
 
 /**
  * @swagger
