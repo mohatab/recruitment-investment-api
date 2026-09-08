@@ -1,0 +1,166 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "واجهة برمجة التطبيقات الموحدة",
+    "description": "توثيق API للمشروع الموحد - يشمل أنظمة محمود ومحمد وماتريكس",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "بيئة التطوير"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/mohamed/notifications": {
+      "post": {
+        "tags": ["الإشعارات"],
+        "summary": "إنشاء إشعار جديد",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["message", "time"],
+                "properties": {
+                  "message": {
+                    "type": "string",
+                    "description": "نص الإشعار"
+                  },
+                  "time": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "وقت الإشعار"
+                  },
+                  "userId": {
+                    "type": "string",
+                    "description": "معرف المستخدم (اختياري)"
+                  },
+                  "targetRole": {
+                    "type": "string",
+                    "description": "الدور المستهدف (اختياري)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "تم إنشاء الإشعار بنجاح"
+          }
+        }
+      }
+    },
+    "/api/mohamed/chat/conversations": {
+      "post": {
+        "tags": ["المحادثات"],
+        "summary": "إنشاء محادثة جديدة",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["participants"],
+                "properties": {
+                  "participants": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "قائمة معرفات المشاركين"
+                  },
+                  "title": {
+                    "type": "string",
+                    "description": "عنوان المحادثة (اختياري)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "تم إنشاء المحادثة بنجاح"
+          }
+        }
+      }
+    },
+    "/api/mohamed/experience": {
+      "post": {
+        "tags": ["الخبرات"],
+        "summary": "إضافة خبرة جديدة",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "userId",
+                  "title",
+                  "company",
+                  "location",
+                  "startDate",
+                  "description"
+                ],
+                "properties": {
+                  "userId": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "company": {
+                    "type": "string"
+                  },
+                  "location": {
+                    "type": "string"
+                  },
+                  "startDate": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "endDate": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "skills": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "تم إضافة الخبرة بنجاح"
+          }
+        }
+      }
+    }
+  }
+}
