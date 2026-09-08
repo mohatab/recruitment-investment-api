@@ -1,0 +1,29 @@
+services:
+  api:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      MONGODB_URI: mongodb://mongo:27017/recruitment-investment
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set a real secret in .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set a real secret in .env}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      BASE_URL: ${BASE_URL:-http://localhost:3000}
+    depends_on:
+      - mongo
+    volumes:
+      - uploads:/app/uploads
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+volumes:
+  mongo-data:
+  uploads:

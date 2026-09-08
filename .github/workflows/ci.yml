@@ -2,13 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [master, main]
   pull_request:
-    branches: [master]
+    branches: [master, main]
 
 jobs:
   test:
-    name: Install & test
+    name: Lint, test, audit
     runs-on: ubuntu-latest
 
     steps:
@@ -17,11 +17,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       - name: Install dependencies
         run: npm install
 
-      - name: Run tests
-        run: npm test
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Run tests with coverage
+        run: npm run test:coverage
         env:
-          JWT_SECRET: ci-test-secret
+          JWT_ACCESS_SECRET: ci-test-access-secret
+          JWT_REFRESH_SECRET: ci-test-refresh-secret
+
+      - name: Dependency audit (fails only on high/critical)
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Docker build
+        run: docker build -t recruitment-investment-api:ci .

@@ -98,23 +98,23 @@ and duplicated CORS/JSON/error middleware.
 
 ## 5. Security Issues (verified in code)
 
-| # | Issue | Location | Severity |
-|---|-------|----------|----------|
-| 1 | JWT secret hardcoded as the literal string `"secret"`, ignoring `process.env.JWT_SECRET` entirely | `mohamed/routes/userRoutes.js:41,150` | **CRITICAL** |
-| 2 | Password-reset sets `user.password = req.body.password` and saves — but `matrix/models/user.js` has **no `pre('save')` hashing hook** (unlike `mahmoud`'s User). Every password reset on this model stores the new password **in plaintext**. | `matrix/routes/passwordReset.js:91-92`, `matrix/models/user.js` | **CRITICAL** |
-| 3 | `GET /api/matrix/users` returns full user documents including the bcrypt hash (`.password`) with no field projection | `matrix/routes/users.js:29-37` | **CRITICAL** |
-| 4 | Password-reset request endpoint replies `"user with given email doesn't exist"` when the email isn't registered — classic account-enumeration oracle | `matrix/routes/passwordReset.js:56` | HIGH |
-| 5 | `/api/matrix/password/change` doesn't touch the real database at all — it mutates a hardcoded in-process `fakeUser` object, so it silently does nothing meaningful for real users while returning a success-looking 200 | `matrix/routes/password.js` | HIGH (masquerading feature) |
-| 6 | Socket.IO `joinUserRoom` joins the socket to `user_{userId}` and `role_{role}` purely from a client-supplied `userId` in the payload — no token/session check. Any client can join any user's private notification room, or any role's broadcast room, just by sending that id. | `index.js:81-96` | **CRITICAL** |
-| 7 | Chat REST endpoints (`GET /conversations/:userId`, `GET /messages/:roomId`) and Socket.IO `join room`/`chat message` events read/write another user's messages given only an id — no ownership or membership check | `mohamed/routes/chat.js` (whole file) | **CRITICAL** |
-| 8 | JWTs issued with no `expiresIn` at all (`signupwithcv.js` register-cv, register-manually, login all call `jwt.sign({id}, secret)` with no options) — tokens never expire | `mahmoud/routes/signupwithcv.js:65,90,115` | HIGH |
-| 9 | Failed-login paths return HTTP 200 with a plain string body (`res.send("Invalid credentials")`), not a 401 — a client that checks status codes (correctly) will treat a failed login as success | `mohamed/routes/userRoutes.js:92,147` | HIGH |
-| 10 | Every route accepts a client-supplied `user_type`/role field directly onto the model with no server-side authority check (recruiter vs. candidate, investor vs. startup) — the pattern this project would need for RBAC doesn't exist yet, so nothing currently stops privilege escalation via request body | `mohamed/models/user.js`, `mohamed/routes/userRoutes.js:100` | HIGH |
-| 11 | Stripe: no webhook endpoint/signature verification anywhere in the code — `payment.js` treats a client-supplied `paymentMethodId` and a locally-computed `paymentIntent` result as authoritative, with no persisted `Payment`/`Investment` record and no idempotency key | `matrix/routes/payment.js` (whole file) | HIGH |
-| 12 | `create-payment-method` builds a raw card number (`4242...`, a Stripe test card, but the *pattern* is the problem) server-side via `stripe.paymentMethods.create({card:{number:...}})` — real card numbers must never transit your own server; this requires special unrestricted-PCI Stripe permissions in production and is the wrong integration shape (should be Stripe Elements/PaymentIntent client-side confirmation) | `matrix/routes/payment.js:92-108` | MEDIUM (pattern risk, not an active leak since the number is a test constant) |
-| 13 | No rate limiting, no `helmet` actually wired into `index.js` despite being an installed dependency, no request size limits beyond multer's per-file limit, no NoSQL-injection sanitization (`req.body` passed straight into Mongoose queries/documents in several places, e.g. `matrix/routes/startupRoutes.js:85` `new MatrixStartup(req.body)` with no allow-list) | repo-wide | HIGH |
-| 14 | `.gitignore` does not exclude `mahmoud/uploads/` — real uploaded PDFs and images (someone's coursework files, used while testing the CV-upload feature) are sitting in the working tree unignored | `.gitignore`, `mahmoud/uploads/*` | MEDIUM (portfolio/privacy hygiene, not a live exploit since there's no git history yet) |
-| 15 | `helmet` is a declared dependency but never `app.use(helmet())`'d — dead dependency, no security headers applied | `package.json` vs `index.js` | MEDIUM |
+| #   | Issue                                                                                                                                                                                                                                                                                                                                                                                                                        | Location                                                        | Severity                                                                                |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1   | JWT secret hardcoded as the literal string `"secret"`, ignoring `process.env.JWT_SECRET` entirely                                                                                                                                                                                                                                                                                                                            | `mohamed/routes/userRoutes.js:41,150`                           | **CRITICAL**                                                                            |
+| 2   | Password-reset sets `user.password = req.body.password` and saves — but `matrix/models/user.js` has **no `pre('save')` hashing hook** (unlike `mahmoud`'s User). Every password reset on this model stores the new password **in plaintext**.                                                                                                                                                                                | `matrix/routes/passwordReset.js:91-92`, `matrix/models/user.js` | **CRITICAL**                                                                            |
+| 3   | `GET /api/matrix/users` returns full user documents including the bcrypt hash (`.password`) with no field projection                                                                                                                                                                                                                                                                                                         | `matrix/routes/users.js:29-37`                                  | **CRITICAL**                                                                            |
+| 4   | Password-reset request endpoint replies `"user with given email doesn't exist"` when the email isn't registered — classic account-enumeration oracle                                                                                                                                                                                                                                                                         | `matrix/routes/passwordReset.js:56`                             | HIGH                                                                                    |
+| 5   | `/api/matrix/password/change` doesn't touch the real database at all — it mutates a hardcoded in-process `fakeUser` object, so it silently does nothing meaningful for real users while returning a success-looking 200                                                                                                                                                                                                      | `matrix/routes/password.js`                                     | HIGH (masquerading feature)                                                             |
+| 6   | Socket.IO `joinUserRoom` joins the socket to `user_{userId}` and `role_{role}` purely from a client-supplied `userId` in the payload — no token/session check. Any client can join any user's private notification room, or any role's broadcast room, just by sending that id.                                                                                                                                              | `index.js:81-96`                                                | **CRITICAL**                                                                            |
+| 7   | Chat REST endpoints (`GET /conversations/:userId`, `GET /messages/:roomId`) and Socket.IO `join room`/`chat message` events read/write another user's messages given only an id — no ownership or membership check                                                                                                                                                                                                           | `mohamed/routes/chat.js` (whole file)                           | **CRITICAL**                                                                            |
+| 8   | JWTs issued with no `expiresIn` at all (`signupwithcv.js` register-cv, register-manually, login all call `jwt.sign({id}, secret)` with no options) — tokens never expire                                                                                                                                                                                                                                                     | `mahmoud/routes/signupwithcv.js:65,90,115`                      | HIGH                                                                                    |
+| 9   | Failed-login paths return HTTP 200 with a plain string body (`res.send("Invalid credentials")`), not a 401 — a client that checks status codes (correctly) will treat a failed login as success                                                                                                                                                                                                                              | `mohamed/routes/userRoutes.js:92,147`                           | HIGH                                                                                    |
+| 10  | Every route accepts a client-supplied `user_type`/role field directly onto the model with no server-side authority check (recruiter vs. candidate, investor vs. startup) — the pattern this project would need for RBAC doesn't exist yet, so nothing currently stops privilege escalation via request body                                                                                                                  | `mohamed/models/user.js`, `mohamed/routes/userRoutes.js:100`    | HIGH                                                                                    |
+| 11  | Stripe: no webhook endpoint/signature verification anywhere in the code — `payment.js` treats a client-supplied `paymentMethodId` and a locally-computed `paymentIntent` result as authoritative, with no persisted `Payment`/`Investment` record and no idempotency key                                                                                                                                                     | `matrix/routes/payment.js` (whole file)                         | HIGH                                                                                    |
+| 12  | `create-payment-method` builds a raw card number (`4242...`, a Stripe test card, but the _pattern_ is the problem) server-side via `stripe.paymentMethods.create({card:{number:...}})` — real card numbers must never transit your own server; this requires special unrestricted-PCI Stripe permissions in production and is the wrong integration shape (should be Stripe Elements/PaymentIntent client-side confirmation) | `matrix/routes/payment.js:92-108`                               | MEDIUM (pattern risk, not an active leak since the number is a test constant)           |
+| 13  | No rate limiting, no `helmet` actually wired into `index.js` despite being an installed dependency, no request size limits beyond multer's per-file limit, no NoSQL-injection sanitization (`req.body` passed straight into Mongoose queries/documents in several places, e.g. `matrix/routes/startupRoutes.js:85` `new MatrixStartup(req.body)` with no allow-list)                                                         | repo-wide                                                       | HIGH                                                                                    |
+| 14  | `.gitignore` does not exclude `mahmoud/uploads/` — real uploaded PDFs and images (someone's coursework files, used while testing the CV-upload feature) are sitting in the working tree unignored                                                                                                                                                                                                                            | `.gitignore`, `mahmoud/uploads/*`                               | MEDIUM (portfolio/privacy hygiene, not a live exploit since there's no git history yet) |
+| 15  | `helmet` is a declared dependency but never `app.use(helmet())`'d — dead dependency, no security headers applied                                                                                                                                                                                                                                                                                                             | `package.json` vs `index.js`                                    | MEDIUM                                                                                  |
 
 ## 6. Code-Quality Issues
 
@@ -133,13 +133,13 @@ and duplicated CORS/JSON/error middleware.
   other.
 - `mohamed/routes/userRoutes.js` projects/queries a `username` field
   (`User.find({}, {_id:1, username:1})`, `findById(id, "email username
-  phone")`) that doesn't exist anywhere in `mohamed/models/user.js`
+phone")`) that doesn't exist anywhere in `mohamed/models/user.js`
   (which has `firstName`/`lastName`, no `username`) — dead/broken code
   that always returns empty for that field.
 - `matrix/routes/forms.js` declares an Express error-handling middleware
   (`router.use((err,req,res,next)=>...)`) **before** mounting
   `investorRoutes`/`startupRoutes` — Express only routes errors to
-  handlers declared *after* the throwing middleware, so this handler can
+  handlers declared _after_ the throwing middleware, so this handler can
   never catch errors from the routes it's meant to protect.
 - Four separate ad-hoc "missing required field" validators
   (`if (!x || !y || ...)`) instead of one shared Joi/validation layer,
@@ -197,7 +197,7 @@ database setup (e.g. `mongodb-memory-server`) exists.
 ## 10. Documentation Gaps
 
 Swagger is generated from real route JSDoc, which is good, but it
-describes the *current* fragmented structure (three tag families, three
+describes the _current_ fragmented structure (three tag families, three
 auth flows) rather than a coherent product. `API_DOCUMENTATION.md` is a
 second, hand-written, partially-Arabic doc that will drift from
 `swagger.json` the moment either one is edited — two sources of truth for
@@ -223,7 +223,7 @@ of everything else here.
   way to know if `matrix`'s user #123 is the same person as `mohamed`'s
   user #123.
 - No indexes beyond the ones Mongoose creates automatically for `unique:
-  true` fields and the one explicit index on `Notification.createdAt`.
+true` fields and the one explicit index on `Notification.createdAt`.
   Nothing indexes `Job` fields used for search/filtering, nothing indexes
   foreign keys (because the foreign keys don't exist yet).
 - Inconsistent required/validation strictness: `mahmoud.Job` requires
@@ -262,7 +262,8 @@ is stable; remove the daily fake-activity workflow.
 ## 15. Prioritized Roadmap
 
 **CRITICAL** (fix before anything else — active vulnerabilities / broken install)
-1. Add missing `body-parser` dependency *or* (preferred) delete every
+
+1. Add missing `body-parser` dependency _or_ (preferred) delete every
    `require("body-parser")` and rely on the already-applied
    `express.json()` — the app cannot `npm install && start` cleanly today.
 2. Fix hardcoded JWT secret in `mohamed/routes/userRoutes.js`.
@@ -271,39 +272,20 @@ is stable; remove the daily fake-activity workflow.
 5. Authenticate Socket.IO connections; stop trusting client-supplied
    `userId`/room membership for notifications and chat.
 6. Consolidate the 4 duplicate User models into one shared `User` model
-   + one JWT auth middleware + role-based authorization.
+   - one JWT auth middleware + role-based authorization.
 
-**HIGH**
-7. Add `job`/`applicant` refs to `Application`; add duplicate-application
-   prevention and an application-status state machine.
-8. Add `user` refs to `Investor`, `Startup`, `InvestmentCriteria`,
-   `Experience`.
-9. Wire `helmet`, `express-rate-limit`, and Mongo query sanitization.
-10. Replace the fake in-memory password-change endpoint with a real one
-    against the authenticated user.
-11. Add Stripe webhook handling + a persisted `Payment`/`Investment`
-    record; stop building raw card numbers server-side.
-12. Give every JWT a real, short expiry + document it.
-13. Standardize the response envelope and status codes across all routes.
-14. Add `.gitignore` entry for uploads; move real uploaded files out of
-    the working tree.
+**HIGH** 7. Add `job`/`applicant` refs to `Application`; add duplicate-application
+prevention and an application-status state machine. 8. Add `user` refs to `Investor`, `Startup`, `InvestmentCriteria`,
+`Experience`. 9. Wire `helmet`, `express-rate-limit`, and Mongo query sanitization. 10. Replace the fake in-memory password-change endpoint with a real one
+against the authenticated user. 11. Add Stripe webhook handling + a persisted `Payment`/`Investment`
+record; stop building raw card numbers server-side. 12. Give every JWT a real, short expiry + document it. 13. Standardize the response envelope and status codes across all routes. 14. Add `.gitignore` entry for uploads; move real uploaded files out of
+the working tree.
 
-**MEDIUM**
-15. Add a centralized error-handling middleware + typed error classes.
-16. Add pagination/filtering/sorting to list endpoints.
-17. Add indexes for query-heavy fields and foreign keys.
-18. Replace ad-hoc field-presence checks with shared Joi schemas.
-19. Add a `GET /health` endpoint (app + Mongo connectivity).
-20. Add structured logging with levels.
+**MEDIUM** 15. Add a centralized error-handling middleware + typed error classes. 16. Add pagination/filtering/sorting to list endpoints. 17. Add indexes for query-heavy fields and foreign keys. 18. Replace ad-hoc field-presence checks with shared Joi schemas. 19. Add a `GET /health` endpoint (app + Mongo connectivity). 20. Add structured logging with levels.
 
-**LOW / OPTIONAL**
-21. Add Docker + docker-compose for local dev.
-22. Expand CI to lint + coverage reporting + `npm audit`.
-23. Remove the daily fake-activity-log workflow.
-24. Rewrite README/API docs once the surface is stable; delete the
-    duplicate hand-written `API_DOCUMENTATION.md` in favor of Swagger as
-    the single source of truth (or vice versa — pick one).
-25. Reconsider the "success prediction" endpoint — it's a hardcoded
-    if/else with no actual model behind it; either relabel it honestly
-    as a rule-based heuristic in its docs, or drop it. Don't ship it
-    described as prediction/ML if it isn't.
+**LOW / OPTIONAL** 21. Add Docker + docker-compose for local dev. 22. Expand CI to lint + coverage reporting + `npm audit`. 23. Remove the daily fake-activity-log workflow. 24. Rewrite README/API docs once the surface is stable; delete the
+duplicate hand-written `API_DOCUMENTATION.md` in favor of Swagger as
+the single source of truth (or vice versa — pick one). 25. Reconsider the "success prediction" endpoint — it's a hardcoded
+if/else with no actual model behind it; either relabel it honestly
+as a rule-based heuristic in its docs, or drop it. Don't ship it
+described as prediction/ML if it isn't.

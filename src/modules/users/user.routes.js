@@ -1,0 +1,117 @@
+const express = require("express");
+const controller = require("./user.controller");
+const validate = require("../../common/middleware/validate");
+const schemas = require("./user.validation");
+const { authenticate, authorize } = require("../../common/middleware/auth");
+const { uploadCv } = require("../../common/middleware/upload");
+const ROLES = require("../../common/constants/roles");
+
+const router = express.Router();
+router.use(authenticate);
+
+/**
+ * @swagger
+ * /api/users/me:
+ *   get:
+ *     tags: [Users]
+ *     summary: Get the current authenticated user's profile
+ *     security: [{ BearerAuth: [] }]
+ *     responses:
+ *       200: { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ */
+router.get("/me", controller.getMe);
+
+/**
+ * @swagger
+ * /api/users/me:
+ *   patch:
+ *     tags: [Users]
+ *     summary: Update the current user's profile
+ *     security: [{ BearerAuth: [] }]
+ *     requestBody:
+ *       content: { application/json: { schema: { $ref: '#/components/schemas/UpdateProfileInput' } } }
+ *     responses:
+ *       200: { description: Updated }
+ *       400: { $ref: '#/components/responses/ValidationError' }
+ */
+router.patch("/me", validate(schemas.updateProfile), controller.updateMe);
+
+/**
+ * @swagger
+ * /api/users/me/password:
+ *   post:
+ *     tags: [Users]
+ *     summary: Change the current user's password
+ *     security: [{ BearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema: { type: object, required: [currentPassword, newPassword], properties: { currentPassword: { type: string }, newPassword: { type: string, minLength: 6 } } }
+ *     responses:
+ *       200: { description: Password changed }
+ *       401: { description: Current password incorrect }
+ */
+router.post("/me/password", validate(schemas.changePassword), controller.changePassword);
+
+/**
+ * @swagger
+ * /api/users/me/cv:
+ *   post:
+ *     tags: [Users]
+ *     summary: Upload/replace the current user's CV (PDF/DOC/DOCX, max 5MB)
+ *     security: [{ BearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema: { type: object, properties: { cv: { type: string, format: binary } } }
+ *     responses:
+ *       200: { description: CV uploaded }
+ *       400: { description: Invalid file type/size }
+ */
+router.post("/me/cv", uploadCv.single("cv"), controller.uploadCv);
+
+/**
+ * @swagger
+ * /api/users:
+ *   get:
+ *     tags: [Users]
+ *     summary: List users (admin only)
+ *     security: [{ BearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: role
+ *         schema: { type: string, enum: [candidate, recruiter, investor, startup, admin] }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: OK }
+ *       403: { $ref: '#/components/responses/Forbidden' }
+ */
+router.get("/", authorize(ROLES.ADMIN), controller.list);
+
+/**
+ * @swagger
+ * /api/users/{id}:
+ *   get:
+ *     tags: [Users]
+ *     summary: Get a user's public profile by id
+ *     security: [{ BearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *       404: { $ref: '#/components/responses/NotFound' }
+ */
+router.get("/:id", controller.getById);
+
+module.exports = router;
