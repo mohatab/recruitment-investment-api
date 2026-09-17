@@ -10,7 +10,8 @@ const env = require("../../config/env");
 const ALGORITHM = "HS256";
 
 function signAccessToken(user) {
-  return jwt.sign({ sub: String(user._id), role: user.role }, env.jwt.accessSecret, {
+  // `ver` ties the token to the session generation (User.tokenVersion).
+  return jwt.sign({ sub: String(user._id), role: user.role, ver: user.tokenVersion ?? 0 }, env.jwt.accessSecret, {
     expiresIn: env.jwt.accessExpiresIn,
     algorithm: ALGORITHM,
   });

@@ -14,7 +14,9 @@ const userSchema = new mongoose.Schema(
       trim: true,
       match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Please provide a valid email"],
     },
-    password: { type: String, required: true, minlength: 6, select: false },
+    // Policy (length, bcrypt's 72-byte limit) is enforced by the Joi schemas;
+    // this field only ever holds the bcrypt hash.
+    password: { type: String, required: true, select: false },
     role: { type: String, enum: Object.values(ROLES), required: true, default: ROLES.CANDIDATE },
     phone: { type: String, trim: true, default: "" },
 
@@ -30,6 +32,11 @@ const userSchema = new mongoose.Schema(
 
     cvUrl: { type: String, default: null },
     isActive: { type: Boolean, default: true },
+    emailVerifiedAt: { type: Date, default: null },
+    // Embedded in access tokens and stored on refresh tokens. Incrementing it
+    // revokes every session at once (password change/reset, deactivation,
+    // logout-all, refresh-token reuse).
+    tokenVersion: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
@@ -49,7 +56,9 @@ userSchema.methods.comparePassword = function comparePassword(candidate) {
 userSchema.methods.toJSON = function toJSON() {
   const obj = this.toObject();
   delete obj.password;
+  delete obj.tokenVersion;
   delete obj.__v;
+  if ("emailVerifiedAt" in obj) obj.emailVerified = Boolean(obj.emailVerifiedAt); // absent in projected public profiles
   return obj;
 };
 

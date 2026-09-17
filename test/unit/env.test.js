@@ -13,6 +13,7 @@ const PROD = {
   JWT_ACCESS_SECRET: "a".repeat(32),
   JWT_REFRESH_SECRET: "b".repeat(32),
   CORS_ORIGIN: "https://app.example.com, https://admin.example.com",
+  APP_URL: "https://app.example.com/",
   STRIPE_SECRET_KEY: "sk_test_x",
   STRIPE_WEBHOOK_SECRET: "whsec_x",
   SMTP_HOST: "smtp.example.com",
@@ -71,13 +72,16 @@ describe("environment validation", () => {
       "STRIPE_SECRET_KEY",
       "STRIPE_WEBHOOK_SECRET",
       "SMTP_USER",
+      "APP_URL",
     ]) {
       expect(message).toMatch(key);
     }
   });
 
-  test("a complete production config parses the CORS allowlist", () => {
-    expect(loadEnv(PROD).corsOrigin).toEqual(["https://app.example.com", "https://admin.example.com"]);
+  test("a complete production config parses the CORS allowlist and normalizes APP_URL", () => {
+    const env = loadEnv(PROD);
+    expect(env.corsOrigin).toEqual(["https://app.example.com", "https://admin.example.com"]);
+    expect(env.appUrl).toBe("https://app.example.com");
   });
 
   test("TRUST_PROXY defaults off and accepts boolean, hop count, or a named preset", () => {

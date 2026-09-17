@@ -1,8 +1,9 @@
 const Joi = require("joi");
 
+// Shared by POST /api/messages and the chat:message socket event.
 const send = Joi.object({
-  receiverId: Joi.string().required(),
-  body: Joi.string().min(1).required(),
+  receiverId: Joi.string().hex().length(24).required(),
+  body: Joi.string().trim().min(1).max(5000).required(),
 });
 
 module.exports = { send };

@@ -2,7 +2,7 @@ const express = require("express");
 const controller = require("./job.controller");
 const validate = require("../../../common/middleware/validate");
 const schemas = require("./job.validation");
-const { authenticate, authorize } = require("../../../common/middleware/auth");
+const { authenticate, authorize, requireVerifiedEmail } = require("../../../common/middleware/auth");
 const ROLES = require("../../../common/constants/roles");
 const applicationRoutes = require("../applications/application.routes");
 
@@ -71,9 +71,16 @@ router.get("/:id", controller.getById);
  *     responses:
  *       201: { description: Created }
  *       400: { $ref: '#/components/responses/ValidationError' }
- *       403: { $ref: '#/components/responses/Forbidden' }
+ *       403: { description: "FORBIDDEN (not a recruiter) or EMAIL_NOT_VERIFIED" }
  */
-router.post("/", authenticate, authorize(ROLES.RECRUITER), validate(schemas.create), controller.create);
+router.post(
+  "/",
+  authenticate,
+  authorize(ROLES.RECRUITER),
+  requireVerifiedEmail,
+  validate(schemas.create),
+  controller.create
+);
 
 /**
  * @swagger

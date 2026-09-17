@@ -26,6 +26,9 @@ const options = {
             role: { type: "string", enum: ["candidate", "recruiter", "investor", "startup", "admin"] },
             phone: { type: "string" },
             cvUrl: { type: "string", nullable: true },
+            isActive: { type: "boolean" },
+            emailVerified: { type: "boolean" },
+            emailVerifiedAt: { type: "string", format: "date-time", nullable: true },
           },
         },
         RegisterInput: {
@@ -35,7 +38,11 @@ const options = {
             firstName: { type: "string" },
             lastName: { type: "string" },
             email: { type: "string", format: "email" },
-            password: { type: "string", minLength: 6 },
+            password: {
+              type: "string",
+              minLength: 8,
+              description: "At least 8 characters and at most 72 bytes (bcrypt's input limit)",
+            },
             role: { type: "string", enum: ["candidate", "recruiter", "investor", "startup"] },
           },
         },
@@ -54,6 +61,19 @@ const options = {
                 user: { $ref: "#/components/schemas/User" },
                 accessToken: { type: "string" },
                 refreshToken: { type: "string" },
+              },
+            },
+          },
+        },
+        TokenPairResponse: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            data: {
+              type: "object",
+              properties: {
+                accessToken: { type: "string", description: "JWT, 15 min by default" },
+                refreshToken: { type: "string", description: "Opaque, single use, 7 days by default" },
               },
             },
           },

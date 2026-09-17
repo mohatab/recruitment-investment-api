@@ -8,20 +8,20 @@ drag the whole history along with it).
 
 ## Collections
 
-| Collection           | Purpose                                          | Owner reference                        |
-| -------------------- | ------------------------------------------------ | -------------------------------------- |
-| `User`               | Single identity source for every role            | —                                      |
-| `RefreshToken`       | Hashed, rotating session tokens                  | `user`                                 |
-| `PasswordResetToken` | Hashed, single-use, TTL-expiring                 | `user`                                 |
-| `Job`                | Recruiter's job posting                          | `recruiter` → User                     |
-| `Application`        | A candidate's application to a job               | `job` → Job, `applicant` → User        |
-| `Startup`            | One fundraising profile per startup account      | `owner` → User (unique)                |
-| `Investor`           | One profile + criteria per investor account      | `owner` → User (unique)                |
-| `Investment`         | A Stripe-backed investment                       | `investor` → User, `startup` → Startup |
-| `Experience`         | A candidate's work-history entry                 | `user` → User                          |
-| `Notification`       | In-app notification (personal or role-broadcast) | `user` → User (nullable)               |
-| `Message`            | A direct message                                 | `sender`/`receiver` → User             |
-| `Contact`            | Public contact-form submission                   | — (no account required)                |
+| Collection     | Purpose                                          | Owner reference                        |
+| -------------- | ------------------------------------------------ | -------------------------------------- |
+| `User`         | Single identity source for every role            | —                                      |
+| `RefreshToken` | Hashed, rotating session tokens                  | `user`                                 |
+| `AuthToken`    | Hashed one-time email tokens (reset, verify)     | `user`                                 |
+| `Job`          | Recruiter's job posting                          | `recruiter` → User                     |
+| `Application`  | A candidate's application to a job               | `job` → Job, `applicant` → User        |
+| `Startup`      | One fundraising profile per startup account      | `owner` → User (unique)                |
+| `Investor`     | One profile + criteria per investor account      | `owner` → User (unique)                |
+| `Investment`   | A Stripe-backed investment                       | `investor` → User, `startup` → Startup |
+| `Experience`   | A candidate's work-history entry                 | `user` → User                          |
+| `Notification` | In-app notification (personal or role-broadcast) | `user` → User (nullable)               |
+| `Message`      | A direct message                                 | `sender`/`receiver` → User             |
+| `Contact`      | Public contact-form submission                   | — (no account required)                |
 
 ## Why one `User` model
 
@@ -63,7 +63,7 @@ them their own collection was the original bug, not a design worth keeping.
   participants, which is all this messaging feature needs. Adding a
   `Conversation` collection would be justified for group chat; it isn't
   for 1:1 messages.
-- **`RefreshToken`/`PasswordResetToken` store a hash, never the raw
+- **`RefreshToken`/`AuthToken` store a hash, never the raw
   token**, and both have a TTL index (`expireAfterSeconds: 0` on
   `expiresAt`) so expiry is enforced by MongoDB itself, not just
   application logic that could be bypassed by calling the model directly.
@@ -81,7 +81,7 @@ none were added speculatively.
 - `Investment.{investor}`, `Investment.{startup}`, `Investment.{stripePaymentIntentId}` (unique, sparse) — the webhook's lookup key
 - `Notification.{user, createdAt}` and `Notification.{targetRole, createdAt}` — `listMine` queries `$or: [{user}, {targetRole}]` sorted by `createdAt`; Mongo satisfies an `$or` by index union, running each branch against its own index, so each branch gets its own compound index with the sort key included, rather than one lone single-field index per branch that can't also serve the sort
 - `Message.{roomId, createdAt}` — every message query filters by `roomId` and sorts by `createdAt`; this single compound index serves both (a separate single-field index on `roomId` alone would be redundant, since this compound index's `roomId`-only prefix already serves a `roomId`-alone query — an earlier version of this schema had exactly that redundant index, removed once the query patterns were checked against it)
-- `RefreshToken`/`PasswordResetToken.{expiresAt}` — TTL indexes for automatic expiry
+- `RefreshToken`/`AuthToken.{expiresAt}` — TTL indexes for automatic expiry; `AuthToken.{user, purpose, createdAt}` serves the supersede and cooldown lookups
 
 ## Known, accepted trade-offs
 

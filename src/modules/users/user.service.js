@@ -1,5 +1,6 @@
 const User = require("./user.model");
-const { NotFoundError, UnauthorizedError } = require("../../common/errors/AppError");
+const authService = require("../auth/auth.service");
+const { NotFoundError, ValidationError } = require("../../common/errors/AppError");
 const { parsePagination, buildMeta } = require("../../common/utils/pagination");
 
 async function getById(id) {
@@ -25,14 +26,16 @@ async function updateProfile(userId, updates) {
   return user;
 }
 
-async function changePassword(userId, currentPassword, newPassword) {
-  const user = await User.findById(userId).select("+password");
-  if (!user) throw new NotFoundError("User not found");
-  if (!(await user.comparePassword(currentPassword))) {
-    throw new UnauthorizedError("Current password is incorrect");
+// Admin only (enforced by the route). Deactivation takes effect immediately:
+// every session is revoked and open sockets are disconnected.
+async function setStatus(targetId, adminId, isActive) {
+  if (String(targetId) === String(adminId)) {
+    throw new ValidationError("You cannot change the status of your own account");
   }
-  user.password = newPassword;
-  await user.save();
+  const user = await User.findByIdAndUpdate(targetId, { isActive }, { new: true });
+  if (!user) throw new NotFoundError("User not found");
+  if (!isActive) await authService.revokeAllSessions(user._id, "deactivated");
+  return user;
 }
 
 async function list(query) {
@@ -47,4 +50,4 @@ async function list(query) {
   return { items, meta: buildMeta({ page, limit, total }) };
 }
 
-module.exports = { getById, getPublicProfile, updateProfile, changePassword, list };
+module.exports = { getById, getPublicProfile, updateProfile, setStatus, list };

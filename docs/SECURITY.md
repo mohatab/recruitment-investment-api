@@ -16,28 +16,47 @@ so it can be checked directly.
   closes algorithm-confusion attacks (a token crafted with `alg: none` or a
   mismatched algorithm) regardless of what `jsonwebtoken`'s own defaults
   do. Covered by `test/unit/jwt.test.js`.
-- **Access tokens** are short-lived JWTs (15 min default); **refresh
-  tokens** are opaque random values, stored as a SHA-256 hash
-  (`RefreshToken.tokenHash`), never the raw value — a database leak alone
-  doesn't hand out usable sessions.
-- **Refresh rotation**: every `/api/auth/refresh` call revokes the token it
-  was given and issues a new one; reusing a rotated token is rejected
-  (`auth.service.js`, tested in `auth.test.js`).
-- **Password reset**: single-use (`usedAt` marks it spent), TTL-expired via
-  a MongoDB index (`expireAfterSeconds: 0`, not just an application-level
-  check), and resetting a password revokes every outstanding refresh token
-  for that account. The request endpoint returns the same response whether
-  or not the email is registered — no account-enumeration oracle.
+- **Access tokens** are short-lived JWTs (15 min default) carrying a session
+  generation (`ver`). Each request re-checks the stored user: an inactive
+  account or a `ver` that no longer matches `User.tokenVersion` is rejected.
+  **Refresh tokens** are opaque random values stored as SHA-256 hashes
+  (`RefreshToken.tokenHash`), never the raw value.
+- **Refresh rotation with reuse detection**: consuming a token is a single
+  atomic update, so concurrent requests with one token cannot both succeed.
+  Replaying a rotated token revokes every session of the user. Concurrency and
+  replay are tested in `auth.test.js`.
+- **Session revocation** (`auth.service.revokeAllSessions`): password change,
+  password reset, admin deactivation, logout-all and refresh-token reuse bump
+  `User.tokenVersion`, revoke refresh tokens and disconnect sockets.
+- **Deactivated accounts** cannot log in (`403 ACCOUNT_DISABLED`, returned only
+  after a correct password), refresh, call the API, or open sockets.
+- **Login timing**: unknown emails are compared against a dummy bcrypt hash, so
+  response time doesn't reveal whether an account exists. Wrong password and
+  unknown email return the identical 401.
+- **Password policy**: 8+ characters, at most 72 bytes (bcrypt ignores input
+  beyond that, so it's rejected instead of silently truncated). Changing it
+  requires the current password and a different new one.
+- **Password reset**: `forgot-password` responds before doing any work, so
+  neither body nor timing depends on the email. Tokens are single use (atomic
+  consumption), expire after 1 hour (TTL index), are superseded by a newer
+  request, are limited to one email per account per minute, are never sent to
+  deactivated accounts, and are delivered in the URL fragment
+  (`${APP_URL}/reset-password#token=…`) so they don't reach server logs.
+- **Email verification**: same one-time token mechanism (24 h). Posting jobs and
+  starting investments require a verified email (`EMAIL_NOT_VERIFIED`).
+- **Registration** returns 409 for an existing email. That reveals registration
+  status; it's accepted because registration returns a session immediately, and
+  it's covered by the auth rate limiter.
 - **No self-service privilege escalation at registration**: `admin` is not
   in the public registration schema's allowed roles
   (`auth.validation.js`); provisioning one requires direct database access.
 
 ## Authorization
 
-- **Role is read only from the verified JWT payload**
-  (`common/middleware/auth.js`), set once at login from the stored
-  `User.role` — never from a request body or query string, so a client
-  cannot grant itself a different role by sending one.
+- **Role is read from the stored user** on every request
+  (`auth.service.authenticateAccessToken`) — never from a request body or
+  query string, and a role change applies immediately rather than when the
+  token expires.
 - **Ownership checks live in the service layer**, next to the query they
   protect (`assertOwnership` in job/startup services, inline comparisons
   elsewhere) — e.g. a recruiter can only edit/delete their own job
@@ -106,8 +125,16 @@ so it can be checked directly.
 
 ## Real-time (Socket.IO)
 
-- Every socket authenticates with the same JWT at handshake
-  (`realtime/socket.js`) — no anonymous connections.
+- Every socket authenticates at handshake with the same check as HTTP
+  (`realtime/socket.js`): no anonymous, deactivated or revoked sessions. A
+  socket is disconnected when its token expires or its sessions are revoked.
+- **Event handlers cannot crash the process** (audit C1): every client event
+  goes through `onEvent`, which validates the payload with Joi, catches
+  synchronous throws and async rejections, logs them, and replies with an error
+  ack. Internal error messages are never sent to the client.
+  `test/integration/socket.test.js` covers malformed payloads and failing
+  handlers; `server-lifecycle.test.js` sends malformed events to the real
+  `node src/server.js` process and asserts it stays up.
 - Every room a socket can join (`user_<id>`, `role_<role>`) is derived from
   its own verified identity at connect time, never from an event payload —
   there is no event that takes another user's id and joins the caller to

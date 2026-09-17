@@ -1,4 +1,5 @@
 const Joi = require("joi");
+const { password } = require("../auth/auth.validation");
 
 const updateProfile = Joi.object({
   firstName: Joi.string().min(1).max(80),
@@ -14,7 +15,13 @@ const updateProfile = Joi.object({
 
 const changePassword = Joi.object({
   currentPassword: Joi.string().required(),
-  newPassword: Joi.string().min(6).max(128).required(),
+  newPassword: password.required().invalid(Joi.ref("currentPassword")).messages({
+    "any.invalid": '"newPassword" must differ from "currentPassword"',
+  }),
 });
 
-module.exports = { updateProfile, changePassword };
+const setStatus = Joi.object({
+  isActive: Joi.boolean().strict().required(),
+});
+
+module.exports = { updateProfile, changePassword, setStatus };

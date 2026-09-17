@@ -3,6 +3,9 @@ const net = require("net");
 const { spawn } = require("child_process");
 const mongoose = require("mongoose");
 const request = require("supertest");
+const jsonwebtoken = require("jsonwebtoken");
+const { io: ioClient } = require("socket.io-client");
+const User = require("../../src/modules/users/user.model");
 
 const SERVER = path.join(__dirname, "../../src/server.js");
 
@@ -67,6 +70,52 @@ describe("process startup", () => {
       const res = await request(`http://127.0.0.1:${port}`).get("/health/ready");
       expect(res.status).toBe(200);
     } finally {
+      proc.child.kill();
+      await proc.exited;
+    }
+  });
+});
+
+// Audit C1, end to end against the real entrypoint: before the fix, the first
+// malformed event below made `node src/server.js` exit with code 1.
+describe("malformed Socket.IO events against the real server process", () => {
+  test("the process stays up and keeps serving HTTP and sockets", async () => {
+    const port = await freePort();
+    const proc = runServer({ PORT: String(port), MONGODB_URI: process.env.MONGODB_URI });
+    const clients = [];
+    try {
+      await proc.waitFor(/Server listening on port/);
+      const [alice, bob] = await User.create([
+        { firstName: "A", lastName: "A", email: "a@example.com", password: "password123", emailVerifiedAt: new Date() },
+        { firstName: "B", lastName: "B", email: "b@example.com", password: "password123", emailVerifiedAt: new Date() },
+      ]);
+      // Signed with the child process's secret (see runServer).
+      const token = jsonwebtoken.sign({ sub: String(alice._id), role: "candidate", ver: 0 }, "lifecycle-access", {
+        algorithm: "HS256",
+        expiresIn: "5m",
+      });
+      const socket = ioClient(`http://127.0.0.1:${port}`, {
+        auth: { token },
+        transports: ["websocket"],
+        reconnection: false,
+      });
+      clients.push(socket);
+      await new Promise((resolve, reject) => socket.once("connect", resolve).once("connect_error", reject));
+
+      socket.emit("chat:message", null);
+      socket.emit("chat:message");
+      socket.emit("chat:message", "string");
+      socket.emit("chat:message", { receiverId: { $gt: "" }, body: 1 }, "not-a-callback");
+      const nullAck = await socket.timeout(3000).emitWithAck("chat:message", null);
+      expect(nullAck.error.code).toBe("VALIDATION_ERROR");
+
+      const ok = await socket.timeout(3000).emitWithAck("chat:message", { receiverId: String(bob._id), body: "hi" });
+      expect(ok.ok).toBe(true);
+      expect((await request(`http://127.0.0.1:${port}`).get("/health")).status).toBe(200);
+      expect(proc.child.exitCode).toBeNull();
+      expect(proc.output()).not.toMatch(/Unhandled promise rejection|Uncaught exception/);
+    } finally {
+      clients.forEach((c) => c.close());
       proc.child.kill();
       await proc.exited;
     }

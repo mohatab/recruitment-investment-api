@@ -2,7 +2,7 @@ const express = require("express");
 const controller = require("./investment.controller");
 const validate = require("../../../common/middleware/validate");
 const schemas = require("./investment.validation");
-const { authenticate, authorize } = require("../../../common/middleware/auth");
+const { authenticate, authorize, requireVerifiedEmail } = require("../../../common/middleware/auth");
 const ROLES = require("../../../common/constants/roles");
 
 const router = express.Router();
@@ -23,8 +23,9 @@ router.use(authenticate);
  *     responses:
  *       201: { description: Created }
  *       400: { description: Amount below the startup's minimum investment }
+ *       403: { description: "FORBIDDEN (not an investor) or EMAIL_NOT_VERIFIED" }
  */
-router.post("/", authorize(ROLES.INVESTOR), validate(schemas.create), controller.create);
+router.post("/", authorize(ROLES.INVESTOR), requireVerifiedEmail, validate(schemas.create), controller.create);
 
 /**
  * @swagger

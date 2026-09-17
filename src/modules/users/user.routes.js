@@ -48,9 +48,12 @@ router.patch("/me", validate(schemas.updateProfile), controller.updateMe);
  *       required: true
  *       content:
  *         application/json:
- *           schema: { type: object, required: [currentPassword, newPassword], properties: { currentPassword: { type: string }, newPassword: { type: string, minLength: 6 } } }
+ *           schema: { type: object, required: [currentPassword, newPassword], properties: { currentPassword: { type: string }, newPassword: { type: string, minLength: 8, description: "8+ characters, at most 72 bytes, must differ from currentPassword" } } }
  *     responses:
- *       200: { description: Password changed }
+ *       200:
+ *         description: Password changed. Every existing session (all access and refresh tokens, open sockets) is revoked; the returned pair replaces the caller's tokens.
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/TokenPairResponse' } } }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  *       401: { description: Current password incorrect }
  */
 router.post("/me/password", validate(schemas.changePassword), controller.changePassword);
@@ -113,5 +116,30 @@ router.get("/", authorize(ROLES.ADMIN), controller.list);
  *       404: { $ref: '#/components/responses/NotFound' }
  */
 router.get("/:id", controller.getById);
+
+/**
+ * @swagger
+ * /api/users/{id}/status:
+ *   patch:
+ *     tags: [Users]
+ *     summary: Activate or deactivate an account (admin only). Deactivation revokes all of the user's sessions immediately and blocks login.
+ *     security: [{ BearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema: { type: object, required: [isActive], properties: { isActive: { type: boolean } } }
+ *     responses:
+ *       200: { description: Status updated }
+ *       400: { description: Validation error, or an admin targeting their own account }
+ *       403: { $ref: '#/components/responses/Forbidden' }
+ *       404: { $ref: '#/components/responses/NotFound' }
+ */
+router.patch("/:id/status", authorize(ROLES.ADMIN), validate(schemas.setStatus), controller.setStatus);
 
 module.exports = router;

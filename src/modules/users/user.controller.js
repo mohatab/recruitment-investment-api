@@ -1,4 +1,5 @@
 const userService = require("./user.service");
+const authService = require("../auth/auth.service");
 const asyncHandler = require("../../common/utils/asyncHandler");
 const { ok, paginated } = require("../../common/utils/response");
 const storage = require("../../common/storage");
@@ -16,8 +17,8 @@ const updateMe = asyncHandler(async (req, res) => {
 });
 
 const changePassword = asyncHandler(async (req, res) => {
-  await userService.changePassword(req.user.id, req.body.currentPassword, req.body.newPassword);
-  ok(res, null, "Password changed");
+  const tokens = await authService.changePassword(req.user.id, req.body.currentPassword, req.body.newPassword);
+  ok(res, tokens, "Password changed — all other sessions have been signed out");
 });
 
 const uploadCv = asyncHandler(async (req, res) => {
@@ -33,9 +34,14 @@ const getById = asyncHandler(async (req, res) => {
   ok(res, user);
 });
 
+const setStatus = asyncHandler(async (req, res) => {
+  const user = await userService.setStatus(req.params.id, req.user.id, req.body.isActive);
+  ok(res, user, user.isActive ? "Account activated" : "Account deactivated");
+});
+
 const list = asyncHandler(async (req, res) => {
   const { items, meta } = await userService.list(req.query);
   paginated(res, items, meta);
 });
 
-module.exports = { getMe, updateMe, changePassword, uploadCv, getById, list };
+module.exports = { getMe, updateMe, changePassword, uploadCv, getById, list, setStatus };

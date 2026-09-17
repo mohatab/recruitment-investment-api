@@ -13,6 +13,15 @@ const schema = Joi.object({
   BASE_URL: Joi.string()
     .uri({ scheme: ["http", "https"] })
     .default("http://localhost:3000"),
+  // The client app that renders the /reset-password and /verify-email pages
+  // linked from emails; those pages POST the token back to this API.
+  APP_URL: Joi.string()
+    .uri({ scheme: ["http", "https"] })
+    .when("NODE_ENV", {
+      is: "production",
+      then: Joi.string().required(),
+      otherwise: Joi.string().default("http://localhost:5173"),
+    }),
   // Comma-separated allowlist. "*" is tolerated outside production only.
   CORS_ORIGIN: Joi.string().when("NODE_ENV", {
     is: "production",
@@ -80,6 +89,7 @@ function loadEnv(source = process.env) {
     port: v.PORT,
     logLevel: v.LOG_LEVEL,
     baseUrl: v.BASE_URL,
+    appUrl: v.APP_URL.replace(/\/+$/, ""),
     corsOrigin: v.CORS_ORIGIN === "*" ? "*" : v.CORS_ORIGIN.split(",").map((o) => o.trim()),
     trustProxy: v.TRUST_PROXY,
     rateLimitEnabled: v.RATE_LIMIT_ENABLED,

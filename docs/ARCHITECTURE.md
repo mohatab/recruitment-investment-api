@@ -42,7 +42,7 @@ sequenceDiagram
     MW->>R: passes security/parsing middleware
     R->>V: validate(schema) — strips unknown fields, coerces types
     V->>A: authenticate (JWT) + authorize (role)
-    A->>Ctrl: req.user = { id, role } from verified token only
+    A->>Ctrl: req.user = { id, role, emailVerified } from verified token + stored user
     Ctrl->>Svc: calls service with validated input + req.user
     Svc->>Svc: ownership/business-rule checks
     Svc->>DB: Mongoose query
@@ -66,32 +66,53 @@ sequenceDiagram
 
     C->>Auth: POST /register or /login
     Auth->>DB: create/verify User (bcrypt hash)
-    Auth->>DB: create RefreshToken (hashed, TTL-indexed)
-    Auth-->>C: { accessToken (15m JWT), refreshToken (opaque) }
+    Auth->>DB: create RefreshToken (hash, tokenVersion, TTL)
+    Auth-->>C: { accessToken (15m JWT with ver), refreshToken (opaque) }
+
+    C->>Auth: any authenticated request
+    Auth->>DB: load user: isActive? tokenVersion == ver?
 
     Note over C: access token expires
     C->>Auth: POST /refresh { refreshToken }
-    Auth->>DB: find by hash, check revokedAt/expiresAt
-    Auth->>DB: revoke old token, insert new one
-    Auth-->>C: new { accessToken, refreshToken }
+    Auth->>DB: findOneAndUpdate(unrevoked, unexpired) -> revoke as "rotated"
+    alt token was already rotated (reuse)
+        Auth->>DB: $inc User.tokenVersion, revoke all refresh tokens
+        Auth-->>C: 401
+    else consumed now
+        Auth->>DB: insert new RefreshToken
+        Auth-->>C: new { accessToken, refreshToken }
+    end
 ```
 
-The access token is a JWT (`sub`, `role`, `exp`), verified statelessly on
-every request — no database lookup needed to authenticate a request, only
-to authorize a refresh. The refresh token is deliberately **not** a JWT: it's
-an opaque random value whose hash is stored server-side, which is what
-makes revocation (logout, password reset, rotation) possible without a
-JWT blocklist.
+- **Access token**: JWT (`sub`, `role`, `ver`, `exp`), HS256 pinned. The
+  signature proves authenticity, and one indexed lookup of the user
+  (`auth.service.authenticateAccessToken`, shared by HTTP and Socket.IO) checks
+  that the account is active and that `ver` equals `User.tokenVersion`.
+  Deactivation and session revocation therefore apply on the next request,
+  not after the token expires.
+- **Refresh token**: an opaque random value, stored as a hash, single use.
+  Consumption is one conditional `findOneAndUpdate`. A token that was already
+  _rotated_ being presented again means two parties hold it; since the
+  legitimate one can't be identified, all of the user's sessions are revoked.
+  Each refresh token also records the `tokenVersion` it was issued under, so a
+  token issued concurrently with a revocation is still unusable.
+- **`revokeAllSessions`** = `$inc tokenVersion` + revoke stored refresh tokens +
+  disconnect the user's sockets. It is used by password change and reset,
+  admin deactivation, logout-all, and refresh-token reuse.
+- **One-time email tokens** (`AuthToken`, purposes `password_reset` and
+  `email_verification`): hashed, TTL-expired, consumed atomically, and
+  superseded when a newer one is issued. Forgot-password does its work after
+  responding.
 
 ## Authorization
 
-Role lives only in the verified JWT payload (`common/middleware/auth.js`),
-set once at login/register from the stored `User.role` — never read from
-a request body or query string. `authorize(...roles)` is a route-level
-gate; ownership checks (`assertOwnership`, inline `String(x.owner) !==
-String(userId)` comparisons) live in each service function, right next to
-the query they protect, so the check can't be bypassed by hitting the
-service through a different route.
+`req.user.role` comes from the stored user loaded by `authenticate` — never
+from a request body or query string. `authorize(...roles)` is a route-level
+gate and `requireVerifiedEmail` gates job posting and investments; ownership
+checks (`assertOwnership`, inline `String(x.owner) !== String(userId)`
+comparisons) live in each service function, right next to the query they
+protect, so the check can't be bypassed by hitting the service through a
+different route.
 
 ## Real-time (Socket.IO)
 
@@ -102,15 +123,24 @@ sequenceDiagram
     participant Bob
 
     Alice->>IO: connect (auth: { token })
-    IO->>IO: verify JWT — reject if missing/invalid
+    IO->>IO: authenticateAccessToken — reject if invalid, expired, deactivated or revoked
     IO->>IO: socket.join(`user_<aliceId>`), join(`role_<role>`)
     Bob->>IO: connect (auth: { token })
     IO->>IO: socket.join(`user_<bobId>`)
 
     Alice->>IO: chat:message { receiverId: bobId, body }
-    IO->>IO: persist Message(sender=alice, receiver=bob, roomId)
+    IO->>IO: validate payload (Joi), then message.service.send persists the Message
     IO->>Bob: emit "message" to room `user_<bobId>` only
 ```
+
+Every client event is registered through `onEvent` (`realtime/socket.js`),
+which validates the payload with the same Joi schema as the matching REST
+endpoint, awaits the handler inside `try/catch`, logs unexpected failures and
+answers through the ack (`{ ok: true, data }` or `{ ok: false, error: { code, message } }`).
+A throw or rejection escaping a Socket.IO listener becomes an unhandled
+rejection, which terminates the process — a malformed `chat:message` did
+exactly that before (audit C1). A socket is disconnected when its access
+token expires or when the user's sessions are revoked.
 
 Every room a socket can join is derived from its own verified identity at
 connect time — never from an event payload. There is no event that takes a

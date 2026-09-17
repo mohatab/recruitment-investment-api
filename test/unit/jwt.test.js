@@ -8,6 +8,11 @@ describe("jwt utilities", () => {
     const payload = verifyAccessToken(token);
     expect(payload.sub).toBe("abc123");
     expect(payload.role).toBe("candidate");
+    expect(payload.ver).toBe(0); // session generation defaults to 0
+  });
+
+  test("embeds the user's tokenVersion so revoking sessions invalidates the token", () => {
+    expect(verifyAccessToken(signAccessToken({ _id: "abc123", role: "candidate", tokenVersion: 3 })).ver).toBe(3);
   });
 
   test("rejects a tampered token", () => {

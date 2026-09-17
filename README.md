@@ -114,18 +114,41 @@ Node.js / Express · MongoDB + Mongoose · Socket.IO · JWT + bcryptjs · Stripe
 
 ## Authentication & roles
 
-- **Access tokens**: short-lived JWTs (`JWT_ACCESS_EXPIRES_IN`, default
-  `15m`), sent as `Authorization: Bearer <token>`.
-- **Refresh tokens**: opaque random strings, stored **hashed** server-side,
-  rotated on every use (`POST /api/auth/refresh` revokes the old one and
-  issues a new pair — reusing a rotated token is rejected).
-- **Roles** (`candidate`, `recruiter`, `investor`, `startup`, `admin`) are
-  read only from the verified JWT payload — never from the request body, so
-  a client can't grant itself a different role. `admin` cannot be
-  self-registered; it's provisioned directly in the database.
-- Password reset tokens are single-use, expire after 1 hour (enforced by a
-  MongoDB TTL index, not just application logic), and resetting a password
-  revokes every outstanding refresh token for that account.
+- **Access tokens**: JWTs (`JWT_ACCESS_EXPIRES_IN`, default `15m`) sent as
+  `Authorization: Bearer <token>`. Every authenticated request (and every
+  Socket.IO handshake) also checks the stored user: the account must be active
+  and the token's session generation (`ver`) must match `User.tokenVersion`.
+  Role is taken from the stored user, never from the request.
+- **Refresh tokens**: opaque, single use, stored as SHA-256 hashes, 7 days by
+  default. `POST /api/auth/refresh` consumes the token atomically, so concurrent
+  requests can't both succeed. **Replaying an already-rotated token revokes
+  every session of that user** (reuse detection).
+- **Session revocation**: changing or resetting the password, admin
+  deactivation, `POST /api/auth/logout-all` and refresh-token reuse all increment
+  `User.tokenVersion`, which invalidates every outstanding access and refresh
+  token and disconnects the user's open sockets. `POST /api/auth/logout`
+  revokes a single refresh token. Changing the password returns a fresh token
+  pair for the caller.
+- **Passwords**: bcrypt; at least 8 characters and at most 72 bytes (bcrypt's
+  input limit, rejected rather than silently truncated).
+- **Deactivated accounts** get `403 ACCOUNT_DISABLED` at login, but only after
+  the correct password, so account status isn't disclosed to guessers. Admins
+  toggle status with `PATCH /api/users/:id/status`.
+- **Email verification**: registration emails a link
+  (`${APP_URL}/verify-email#token=…`, valid 24 h, single use). The client app
+  posts the token to `POST /api/auth/verify-email`. Unverified users can sign
+  in and manage their profile, but posting jobs and starting investments
+  returns `403 EMAIL_NOT_VERIFIED`. Without SMTP configured in local
+  development, mark an account verified with
+  `db.users.updateOne({ email: "you@example.com" }, { $set: { emailVerifiedAt: new Date() } })`.
+- **Password reset**: `POST /api/auth/forgot-password` returns immediately with
+  the same body for any email; the lookup and email happen afterwards, so
+  timing doesn't reveal registered addresses. The link
+  (`${APP_URL}/reset-password#token=…`) is valid 1 hour and single use, a newer
+  link supersedes an older one, and at most one email per account is sent per
+  minute. A successful reset revokes every session. Tokens sit in the URL
+  fragment, so they never reach the client app's server logs.
+- `admin` cannot be self-registered; it's provisioned directly in the database.
 
 | Role      | Can do                                                               |
 | --------- | -------------------------------------------------------------------- |
@@ -133,7 +156,7 @@ Node.js / Express · MongoDB + Mongoose · Socket.IO · JWT + bcryptjs · Stripe
 | recruiter | post/manage jobs, review & move applications through their lifecycle |
 | startup   | manage one fundraising profile, view investments received            |
 | investor  | manage criteria, browse/match startups, create investments           |
-| admin     | list users, broadcast notifications                                  |
+| admin     | list users, activate/deactivate accounts, broadcast notifications    |
 
 ## API documentation
 
@@ -285,7 +308,7 @@ Every variable is validated at startup (`src/config/env.js`). The process
 missing or malformed. Always required: `MONGODB_URI`, `JWT_ACCESS_SECRET`,
 `JWT_REFRESH_SECRET` (the two must differ). With `NODE_ENV=production` these
 are also required: a `CORS_ORIGIN` allowlist (not `*`), JWT secrets of 32+
-characters, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `SMTP_USER` and
+characters, `APP_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `SMTP_USER` and
 `SMTP_PASS`.
 
 `TRUST_PROXY` is **off by default**. Set it (e.g. `1` for one proxy hop) only

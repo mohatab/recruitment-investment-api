@@ -4,7 +4,11 @@ const { created, ok } = require("../../common/utils/response");
 
 const register = asyncHandler(async (req, res) => {
   const { user, accessToken, refreshToken } = await authService.register(req.body);
-  created(res, { user, accessToken, refreshToken }, "Registered successfully");
+  created(
+    res,
+    { user, accessToken, refreshToken },
+    "Registered successfully — check your email to verify your address"
+  );
 });
 
 const login = asyncHandler(async (req, res) => {
@@ -13,8 +17,7 @@ const login = asyncHandler(async (req, res) => {
 });
 
 const refresh = asyncHandler(async (req, res) => {
-  const tokens = await authService.refresh(req.body.refreshToken);
-  ok(res, tokens, "Token refreshed");
+  ok(res, await authService.refresh(req.body.refreshToken), "Token refreshed");
 });
 
 const logout = asyncHandler(async (req, res) => {
@@ -22,14 +25,39 @@ const logout = asyncHandler(async (req, res) => {
   ok(res, null, "Logged out");
 });
 
-const forgotPassword = asyncHandler(async (req, res) => {
-  await authService.forgotPassword(req.body.email);
-  ok(res, null, "If that email is registered, a reset link has been sent");
+const logoutAll = asyncHandler(async (req, res) => {
+  await authService.logoutAll(req.user.id);
+  ok(res, null, "Logged out of all sessions");
 });
+
+const forgotPassword = (req, res) => {
+  authService.forgotPassword(req.body.email);
+  ok(res, null, "If that email is registered, a reset link has been sent");
+};
 
 const resetPassword = asyncHandler(async (req, res) => {
   await authService.resetPassword(req.body.token, req.body.password);
-  ok(res, null, "Password reset successfully");
+  ok(res, null, "Password reset successfully — sign in with your new password");
 });
 
-module.exports = { register, login, refresh, logout, forgotPassword, resetPassword };
+const verifyEmail = asyncHandler(async (req, res) => {
+  await authService.verifyEmail(req.body.token);
+  ok(res, null, "Email verified");
+});
+
+const resendVerification = asyncHandler(async (req, res) => {
+  await authService.resendVerification(req.user.id);
+  ok(res, null, "If your email is not yet verified, a new verification link has been sent");
+});
+
+module.exports = {
+  register,
+  login,
+  refresh,
+  logout,
+  logoutAll,
+  forgotPassword,
+  resetPassword,
+  verifyEmail,
+  resendVerification,
+};

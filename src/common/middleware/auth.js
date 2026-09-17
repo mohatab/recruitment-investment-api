@@ -1,39 +1,23 @@
-const { verifyAccessToken } = require("../../modules/auth/jwt");
-const { UnauthorizedError, ForbiddenError } = require("../errors/AppError");
+const { authenticateAccessToken } = require("../../modules/auth/auth.service");
+const { AppError, UnauthorizedError, ForbiddenError } = require("../errors/AppError");
 
-function authenticate(req, res, next) {
+async function authenticate(req, res, next) {
   const header = req.header("Authorization") || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
   if (!token) return next(new UnauthorizedError("Authentication token not provided"));
 
+  let user;
   try {
-    const payload = verifyAccessToken(token);
-    req.user = { id: payload.sub, role: payload.role };
-    next();
-  } catch {
-    next(new UnauthorizedError("Invalid or expired authentication token"));
+    user = await authenticateAccessToken(token);
+  } catch (err) {
+    return next(err);
   }
-}
-
-// Optional auth: attaches req.user when a valid token is present, but never
-// rejects the request — for endpoints that behave differently when logged in
-// (e.g. showing an investor their own match score) without requiring it.
-function optionalAuthenticate(req, res, next) {
-  const header = req.header("Authorization") || "";
-  const token = header.startsWith("Bearer ") ? header.slice(7) : null;
-  if (!token) return next();
-  try {
-    const payload = verifyAccessToken(token);
-    req.user = { id: payload.sub, role: payload.role };
-  } catch {
-    // ignore invalid token on optional routes
-  }
+  req.user = user;
   next();
 }
 
-// Role is only ever trusted from the verified JWT payload (set at login from
-// the stored user document), never from the request body/query — this is
-// what prevents a client from granting itself a different role.
+// req.user.role comes from the stored user document (loaded by authenticate),
+// never from the request body/query — a client cannot grant itself a role.
 function authorize(...roles) {
   return (req, res, next) => {
     if (!req.user) return next(new UnauthorizedError());
@@ -44,4 +28,11 @@ function authorize(...roles) {
   };
 }
 
-module.exports = { authenticate, optionalAuthenticate, authorize };
+// For actions that create records other people rely on (job postings) or move
+// money (investments). Must run after authenticate.
+function requireVerifiedEmail(req, res, next) {
+  if (req.user?.emailVerified) return next();
+  next(new AppError("Verify your email address before performing this action", 403, "EMAIL_NOT_VERIFIED"));
+}
+
+module.exports = { authenticate, authorize, requireVerifiedEmail };

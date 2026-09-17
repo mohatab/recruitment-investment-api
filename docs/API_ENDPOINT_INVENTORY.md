@@ -5,7 +5,7 @@ Swagger) and cross-checked against the test suite by grepping every
 `request(app).<method>(...)` call in `test/`. Counts below are exact as of
 this writing, not estimated.
 
-**Total endpoints: 46 · Tested: 46 · Swagger-documented: 46 · Untested: 0 · Undocumented: 0**
+**Total endpoints: 51 · Tested: 51 · Swagger-documented: 51 · Untested: 0 · Undocumented: 0**
 
 All response bodies follow the standard envelope
 (`{ success, data, message }`, `{ success, data, meta, message }` for lists,
@@ -14,29 +14,33 @@ All response bodies follow the standard envelope
 "Error responses" column below lists the _distinguishing_ codes for that
 endpoint, not the generic ones (400 `VALIDATION_ERROR` on bad input, 401
 `UNAUTHORIZED` on a missing/invalid token) which apply uniformly and are
-covered once here rather than repeated 46 times.
+covered once here rather than repeated for every endpoint.
 
-## Auth (`/api/auth`) — public, rate-limited (20/15min)
+## Auth (`/api/auth`) — rate-limited (20/15min per IP)
 
-| Method | Path               | Auth                         | Body                                                                                                  | Success                                                  | Distinguishing errors          | Test                                     | Swagger |
-| ------ | ------------------ | ---------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ------------------------------ | ---------------------------------------- | ------- |
-| POST   | `/register`        | none                         | firstName, lastName, email, password, role? (candidate/recruiter/investor/startup — `admin` rejected) | 201, user+tokens                                         | 409 email exists               | `auth.test.js`                           | ✅      |
-| POST   | `/login`           | none                         | email, password                                                                                       | 200, user+tokens                                         | 401 invalid credentials        | `auth.test.js`                           | ✅      |
-| POST   | `/refresh`         | none (refresh token in body) | refreshToken                                                                                          | 200, new token pair (old one revoked)                    | 401 invalid/expired/reused     | `auth.test.js`                           | ✅      |
-| POST   | `/logout`          | none (refresh token in body) | refreshToken                                                                                          | 200 (always, even for an unknown token — no oracle)      | —                              | `auth.test.js`                           | ✅      |
-| POST   | `/forgot-password` | none                         | email                                                                                                 | 200 (identical response whether or not the email exists) | —                              | `password-reset.test.js`, `auth.test.js` | ✅      |
-| POST   | `/reset-password`  | none (token in body)         | token, password                                                                                       | 200                                                      | 401 invalid/expired/used token | `password-reset.test.js`                 | ✅      |
+| Method | Path                   | Auth                  | Body                                                                            | Success                                              | Distinguishing errors                                                       | Test                                         | Swagger |
+| ------ | ---------------------- | --------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------- | ------- |
+| POST   | `/register`            | none                  | firstName, lastName, email, password (8+ chars, ≤72 bytes), role? (not `admin`) | 201, user + tokens; verification email sent          | 409 email exists                                                            | `auth.test.js`, `email-verification.test.js` | ✅      |
+| POST   | `/login`               | none                  | email, password                                                                 | 200, user + tokens                                   | 401 invalid credentials, 403 `ACCOUNT_DISABLED`                             | `auth.test.js`                               | ✅      |
+| POST   | `/refresh`             | refresh token in body | refreshToken                                                                    | 200, new pair; presented token consumed              | 401 invalid/expired/revoked; replaying a rotated token revokes all sessions | `auth.test.js`                               | ✅      |
+| POST   | `/logout`              | refresh token in body | refreshToken                                                                    | 200 (also for unknown tokens)                        | 400 malformed token                                                         | `auth.test.js`                               | ✅      |
+| POST   | `/logout-all`          | any authenticated     | —                                                                               | 200, every session revoked                           | 401                                                                         | `auth.test.js`, `socket.test.js`             | ✅      |
+| POST   | `/forgot-password`     | none                  | email                                                                           | 200, identical body; work happens after the response | —                                                                           | `password-reset.test.js`                     | ✅      |
+| POST   | `/reset-password`      | token in body         | token, password                                                                 | 200, all sessions revoked                            | 400 `INVALID_TOKEN` (unknown/expired/used)                                  | `password-reset.test.js`                     | ✅      |
+| POST   | `/verify-email`        | token in body         | token                                                                           | 200                                                  | 400 `INVALID_TOKEN`                                                         | `email-verification.test.js`                 | ✅      |
+| POST   | `/resend-verification` | any authenticated     | —                                                                               | 200 (no-op if verified or sent within a minute)      | 401                                                                         | `email-verification.test.js`                 | ✅      |
 
 ## Users (`/api/users`) — all require auth unless noted
 
-| Method | Path           | Auth/Role         | Body/Params                                                                                                                              | Success                                                                                         | Distinguishing errors      | Test            | Swagger |
-| ------ | -------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------- | --------------- | ------- |
-| GET    | `/me`          | any authenticated | —                                                                                                                                        | 200, full own profile (no password)                                                             | —                          | `users.test.js` | ✅      |
-| PATCH  | `/me`          | any authenticated | firstName?, lastName?, phone?, nationality?, birthdate?, location? — `role`/`email`/`password` not accepted here (mass-assignment guard) | 200                                                                                             | 400 no fields              | `users.test.js` | ✅      |
-| POST   | `/me/password` | any authenticated | currentPassword, newPassword                                                                                                             | 200                                                                                             | 401 wrong current password | `users.test.js` | ✅      |
-| POST   | `/me/cv`       | any authenticated | multipart `cv` (pdf/doc/docx, ≤5MB)                                                                                                      | 200, sets `cvUrl`                                                                               | 400 disallowed type/size   | `users.test.js` | ✅      |
-| GET    | `/`            | `admin`           | query: role?, page?, limit?                                                                                                              | 200, paginated full user docs                                                                   | 403 non-admin              | `users.test.js` | ✅      |
-| GET    | `/:id`         | any authenticated | —                                                                                                                                        | 200, **limited** profile (firstName, lastName, role, createdAt only — no phone/email/birthdate) | 404                        | `users.test.js` | ✅      |
+| Method | Path           | Auth/Role         | Body/Params                                                                                                                              | Success                                                                                         | Distinguishing errors               | Test            | Swagger |
+| ------ | -------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------- | --------------- | ------- |
+| GET    | `/me`          | any authenticated | —                                                                                                                                        | 200, full own profile (no password)                                                             | —                                   | `users.test.js` | ✅      |
+| PATCH  | `/me`          | any authenticated | firstName?, lastName?, phone?, nationality?, birthdate?, location? — `role`/`email`/`password` not accepted here (mass-assignment guard) | 200                                                                                             | 400 no fields                       | `users.test.js` | ✅      |
+| POST   | `/me/password` | any authenticated | currentPassword, newPassword (policy, must differ)                                                                                       | 200, fresh token pair; every other session revoked                                              | 401 wrong current password          | `users.test.js` | ✅      |
+| POST   | `/me/cv`       | any authenticated | multipart `cv` (pdf/doc/docx, ≤5MB)                                                                                                      | 200, sets `cvUrl`                                                                               | 400 disallowed type/size            | `users.test.js` | ✅      |
+| GET    | `/`            | `admin`           | query: role?, page?, limit?                                                                                                              | 200, paginated full user docs                                                                   | 403 non-admin                       | `users.test.js` | ✅      |
+| GET    | `/:id`         | any authenticated | —                                                                                                                                        | 200, **limited** profile (firstName, lastName, role, createdAt only — no phone/email/birthdate) | 404                                 | `users.test.js` | ✅      |
+| PATCH  | `/:id/status`  | `admin`           | isActive (boolean)                                                                                                                       | 200; deactivation revokes all sessions and blocks login                                         | 400 own account, 403 non-admin, 404 | `users.test.js` | ✅      |
 
 ## Jobs (`/api/jobs`)
 
@@ -107,7 +111,7 @@ covered once here rather than repeated 46 times.
 | GET    | `/conversations` | any authenticated | —                | 200, list of conversations with last message + online status                                                                   | —                     | `messaging.test.js` | ✅      |
 | GET    | `/:userId`       | any authenticated | —                | 200, message history with that user (room derived from both real ids server-side — cannot address another pair's conversation) | —                     | `messaging.test.js` | ✅      |
 
-Socket.IO events (`chat:message`) are covered separately in `socket.test.js`
+Socket.IO events (`chat:message`, payload validated with the same schema as `POST /`; ack `{ ok, data }` or `{ ok: false, error }`) are covered separately in `socket.test.js`
 — see [ARCHITECTURE.md](./ARCHITECTURE.md#real-time-socketio); they aren't
 HTTP endpoints so they're noted here rather than tabulated above.
 
@@ -134,6 +138,6 @@ HTTP endpoints so they're noted here rather than tabulated above.
 
 ## How this was verified, not just written
 
-- **Endpoint list**: `grep -nE "^router\.(get|post|put|patch|delete)\("` against every `*.routes.js` file — 46 matches.
-- **Test coverage**: every `request(app).<method>(...)` call across `test/` extracted and matched against the 46 paths above; the mapping above is the result, not an estimate. Two real gaps were actually found and closed while doing this (see `FINAL_PROJECT_REPORT.md`): the entire `experience` and `contact` modules had zero tests before this pass.
+- **Endpoint list**: `grep -nE "^router\.(get|post|put|patch|delete)\("` against every `*.routes.js` file — 51 matches.
+- **Test coverage**: every `request(app).<method>(...)` call across `test/` extracted and matched against the 51 paths above; the mapping above is the result, not an estimate. Two real gaps were actually found and closed while doing this (see `FINAL_PROJECT_REPORT.md`): the entire `experience` and `contact` modules had zero tests before this pass.
 - **Swagger coverage**: every route file carries a `@swagger` JSDoc block per handler; `docs/swagger.js` scans `src/modules/**/*.routes.js`. A dedicated test (`test/unit/swagger-contract.test.js`) loads the generated spec and asserts every implemented route path also appears in it — this is the "zero undocumented endpoints" claim enforced by CI, not just asserted here.
