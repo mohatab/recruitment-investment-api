@@ -2,11 +2,20 @@
 // documented, and its documented security matches its actual authorization
 // middleware. Both sides come from code (JSDoc + router introspection), so
 // adding a route or changing its guards without updating the docs fails here.
+const SwaggerParser = require("@apidevtools/swagger-parser");
 const swaggerSpec = require("../../src/docs/swagger");
 const { collectRoutes } = require("../routes");
 
 const routes = collectRoutes();
 const operation = (r) => swaggerSpec.paths?.[r.openapiPath]?.[r.method.toLowerCase()];
+// Follows a $ref inside components (one level is all this spec uses).
+const resolve = (node) =>
+  node?.$ref
+    ? node.$ref
+        .replace(/^#\//, "")
+        .split("/")
+        .reduce((acc, key) => acc[key], swaggerSpec)
+    : node;
 const label = (r) => `${r.method} ${r.path}`;
 
 describe("Swagger contract", () => {
@@ -52,6 +61,58 @@ describe("Swagger contract", () => {
   test("routes gated on a verified email declare x-requires-verified-email, and only those", () => {
     const wrong = routes.filter((r) => Boolean(operation(r)["x-requires-verified-email"]) !== r.requiresVerifiedEmail);
     expect(wrong.map(label)).toEqual([]);
+  });
+
+  test("the generated document is a valid OpenAPI 3 specification", async () => {
+    // Validates structure, $refs and every schema against the OpenAPI meta-schema.
+    await expect(SwaggerParser.validate(JSON.parse(JSON.stringify(swaggerSpec)))).resolves.toBeDefined();
+  });
+
+  test("every application route is under /api/v1; only health probes are outside it", () => {
+    const misplaced = routes.filter(
+      (r) => !r.openapiPath.startsWith("/api/v1/") && !r.openapiPath.startsWith("/health")
+    );
+    expect(misplaced.map(label)).toEqual([]);
+    expect(Object.keys(swaggerSpec.paths).filter((p) => p.startsWith("/api/") && !p.startsWith("/api/v1/"))).toEqual(
+      []
+    );
+  });
+
+  test("every operation documents a success response with a schema (or 204 with no body)", () => {
+    const wrong = routes.filter((r) => {
+      const responses = operation(r).responses || {};
+      const success = Object.keys(responses).filter((code) => code.startsWith("2"));
+      if (success.length === 0) return true;
+      return success.some((code) => {
+        const response = resolve(responses[code]);
+        return code === "204" ? Boolean(response.content) : !response.content?.["application/json"]?.schema;
+      });
+    });
+    expect(wrong.map(label)).toEqual([]);
+  });
+
+  test("list endpoints document the shared pagination parameters", () => {
+    const paginated = routes.filter((r) => {
+      const responses = operation(r).responses || {};
+      return Object.values(responses).some((x) => JSON.stringify(x).includes("ListResponse"));
+    });
+    expect(paginated.length).toBeGreaterThan(5);
+    const missing = paginated.filter((r) => {
+      const params = JSON.stringify(operation(r).parameters || []);
+      return !["Page", "Limit", "Sort"].every((p) => params.includes(`parameters/${p}`));
+    });
+    expect(missing.map(label)).toEqual([]);
+  });
+
+  test("no component is declared but unused", () => {
+    const used = new Set();
+    JSON.stringify(swaggerSpec).replace(/"#\/components\/(\w+)\/(\w+)"/g, (_, kind, name) =>
+      used.add(`${kind}.${name}`)
+    );
+    const declared = Object.entries(swaggerSpec.components)
+      .filter(([kind]) => kind !== "securitySchemes")
+      .flatMap(([kind, items]) => Object.keys(items).map((name) => `${kind}.${name}`));
+    expect(declared.filter((c) => !used.has(c))).toEqual([]);
   });
 
   test("every $ref in the spec resolves to a real component (no broken references)", () => {

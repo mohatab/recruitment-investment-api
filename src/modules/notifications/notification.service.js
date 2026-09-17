@@ -2,7 +2,9 @@ const Notification = require("./notification.model");
 const User = require("../users/user.model");
 const { getIO } = require("../../realtime/ioRegistry");
 const { NotFoundError, ForbiddenError } = require("../../common/errors/AppError");
-const { parsePagination, buildMeta } = require("../../common/utils/pagination");
+const { parsePagination, buildPagination } = require("../../common/utils/pagination");
+
+const SORTABLE = ["createdAt"];
 
 // What a given user sees: `read` is per user for role broadcasts, and the list
 // of other readers (readBy) is never exposed.
@@ -33,7 +35,7 @@ async function send({ message, userId, targetRole }) {
 }
 
 async function listMine(user, query) {
-  const { page, limit, skip, sort } = parsePagination(query);
+  const { page, limit, skip, sort } = parsePagination(query, { allowedSort: SORTABLE });
   // Notifications addressed to the user personally, plus broadcasts for their
   // role (from the stored user, see authenticate) — never anyone else's.
   const filter = { $or: [{ user: user.id }, { user: null, targetRole: user.role }] };
@@ -42,7 +44,7 @@ async function listMine(user, query) {
     Notification.find(filter).sort(sort).skip(skip).limit(limit).lean(),
     Notification.countDocuments(filter),
   ]);
-  return { items: items.map((n) => toView(n, user.id)), meta: buildMeta({ page, limit, total }) };
+  return { items: items.map((n) => toView(n, user.id)), pagination: buildPagination({ page, limit, total }) };
 }
 
 // Each branch is a single conditional update whose filter *is* the
@@ -69,4 +71,4 @@ async function markRead(notificationId, user) {
   throw new NotFoundError("Notification not found");
 }
 
-module.exports = { notifyUser, notifyRole, send, listMine, markRead };
+module.exports = { notifyUser, notifyRole, send, listMine, markRead, SORTABLE };

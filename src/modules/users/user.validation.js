@@ -1,5 +1,8 @@
 const Joi = require("joi");
 const { password } = require("../auth/auth.validation");
+const { listQuery } = require("../../common/utils/pagination");
+const { SORTABLE } = require("./user.service");
+const ROLES = require("../../common/constants/roles");
 
 const updateProfile = Joi.object({
   firstName: Joi.string().min(1).max(80),
@@ -24,4 +27,6 @@ const setStatus = Joi.object({
   isActive: Joi.boolean().strict().required(),
 });
 
-module.exports = { updateProfile, changePassword, setStatus };
+const list = listQuery(SORTABLE, { role: Joi.string().valid(...Object.values(ROLES)) });
+
+module.exports = { updateProfile, changePassword, setStatus, list };

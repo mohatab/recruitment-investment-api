@@ -1,5 +1,5 @@
 const { authenticateAccessToken } = require("../../modules/auth/auth.service");
-const { AppError, UnauthorizedError, ForbiddenError } = require("../errors/AppError");
+const { ForbiddenError, UnauthorizedError, CODES } = require("../errors/AppError");
 
 async function authenticate(req, res, next) {
   const header = req.header("Authorization") || "";
@@ -36,7 +36,7 @@ function authorize(...roles) {
 // money (investments). Must run after authenticate.
 function requireVerifiedEmail(req, res, next) {
   if (req.user?.emailVerified) return next();
-  next(new AppError("Verify your email address before performing this action", 403, "EMAIL_NOT_VERIFIED"));
+  next(new ForbiddenError("Verify your email address before performing this action", CODES.EMAIL_NOT_VERIFIED));
 }
 
 module.exports = { authenticate, authorize, requireVerifiedEmail };

@@ -1,6 +1,6 @@
 const investmentService = require("./investment.service");
 const asyncHandler = require("../../../common/utils/asyncHandler");
-const { ok, created } = require("../../../common/utils/response");
+const { ok, created, paginated } = require("../../../common/utils/response");
 
 const create = asyncHandler(async (req, res) => {
   const { investment, clientSecret } = await investmentService.create(req.user.id, req.body);
@@ -8,11 +8,13 @@ const create = asyncHandler(async (req, res) => {
 });
 
 const listMine = asyncHandler(async (req, res) => {
-  ok(res, await investmentService.listMine(req.user.id));
+  const { items, pagination } = await investmentService.listMine(req.user.id, req.query);
+  paginated(res, items, pagination);
 });
 
 const listForMyStartup = asyncHandler(async (req, res) => {
-  ok(res, await investmentService.listForStartupOwner(req.user.id));
+  const { items, pagination } = await investmentService.listForStartupOwner(req.user.id, req.query);
+  paginated(res, items, pagination);
 });
 
 const refund = asyncHandler(async (req, res) => {

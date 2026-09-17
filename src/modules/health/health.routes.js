@@ -29,11 +29,7 @@ async function mongoIsUp() {
  *     summary: Liveness probe — the process is running and serving HTTP (checks no dependencies)
  *     security: []
  *     responses:
- *       200:
- *         description: Alive
- *         content:
- *           application/json:
- *             example: { success: true, data: { status: "ok", uptimeSeconds: 42 } }
+ *       200: { $ref: '#/components/responses/HealthResponse' }
  */
 router.get("/health", (req, res) => {
   res.json({ success: true, data: { status: "ok", uptimeSeconds: Math.floor(process.uptime()) } });
@@ -47,16 +43,8 @@ router.get("/health", (req, res) => {
  *     summary: Readiness probe — MongoDB answers a ping and the server is not shutting down
  *     security: []
  *     responses:
- *       200:
- *         description: Ready to receive traffic
- *         content:
- *           application/json:
- *             example: { success: true, data: { status: "ready", checks: { mongodb: "up" } } }
- *       503:
- *         description: Not ready (dependency down, or draining during graceful shutdown)
- *         content:
- *           application/json:
- *             example: { success: false, data: { status: "not_ready", checks: { mongodb: "down" } } }
+ *       200: { $ref: '#/components/responses/ReadinessResponse' }
+ *       503: { $ref: '#/components/responses/ReadinessResponse' }
  */
 router.get("/health/ready", async (req, res) => {
   if (req.app.locals.shuttingDown) {

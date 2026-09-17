@@ -48,7 +48,7 @@ sequenceDiagram
     Svc->>DB: Mongoose query
     DB-->>Svc: result
     Svc-->>Ctrl: domain object
-    Ctrl-->>C: { success, data, message }
+    Ctrl-->>C: { success, data, message } (+ pagination for lists)
 ```
 
 Errors at any stage (`throw new AppError(...)`, a Mongoose `ValidationError`/
@@ -61,7 +61,7 @@ see [Error handling](#error-handling) below.
 ```mermaid
 sequenceDiagram
     participant C as Client
-    participant Auth as /api/auth
+    participant Auth as /api/v1/auth
     participant DB as MongoDB
 
     C->>Auth: POST /register or /login
@@ -169,9 +169,9 @@ point it would matter, not built speculatively.
 ```mermaid
 sequenceDiagram
     participant Investor
-    participant API as /api/investments
+    participant API as /api/v1/investments
     participant Stripe
-    participant Webhook as /api/payments/webhook
+    participant Webhook as /api/v1/payments/webhook
     participant DB as MongoDB
 
     Investor->>API: POST { startupId, amount }
@@ -204,6 +204,24 @@ wrong easily elsewhere:
    read-then-check-then-write — Stripe redelivers webhooks, and a
    read-then-write version of this check has a real race under concurrent
    delivery (see `investment.service.js` for the full comment).
+
+## API contract
+
+- **Versioning**: all application routes are mounted under `/api/v1` in
+  `app.js`; `/health` and `/health/ready` stay outside it because probes are
+  infrastructure, not product API.
+- **Success**: `{ success, data, message }` from `common/utils/response.js`
+  (`ok` / `created` / `paginated` / `noContent`). Lists add `pagination`.
+  Deletes are `204` with no body. The Stripe webhook is deliberately outside
+  the envelope — Stripe defines that response.
+- **Errors**: `{ success: false, error: { code, message, details? }, requestId }`.
+  Codes are stable strings in `common/errors/errorCodes.js`. 400 means the
+  request was malformed; **422 means it was well-formed but a business rule
+  refused it** (`UnprocessableEntityError`), which lets a client tell "fix your
+  input" from "the domain says no".
+- **Pagination**: `common/utils/pagination.js` provides both the parser and the
+  Joi fragment (`listQuery`) used by every list endpoint, including the sort
+  allowlist.
 
 ## Error handling
 

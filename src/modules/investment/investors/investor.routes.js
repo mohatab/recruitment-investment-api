@@ -9,7 +9,7 @@ const router = express.Router();
 
 /**
  * @swagger
- * /api/investors/me:
+ * /api/v1/investors/me:
  *   put:
  *     tags: [Investors]
  *     summary: Create or update the current user's investor profile + investment criteria (investor role only)
@@ -19,7 +19,8 @@ const router = express.Router();
  *       required: true
  *       content: { application/json: { schema: { $ref: '#/components/schemas/InvestorInput' } } }
  *     responses:
- *       200: { description: Saved }
+ *       200: { $ref: '#/components/responses/InvestorResponse' }
+ *       201: { $ref: '#/components/responses/InvestorResponse' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       403: { $ref: '#/components/responses/Forbidden' }
  */
@@ -27,23 +28,23 @@ router.put("/me", authenticate, authorize(ROLES.INVESTOR), validate(schemas.upse
 
 /**
  * @swagger
- * /api/investors/me:
+ * /api/v1/investors/me:
  *   get:
  *     tags: [Investors]
  *     summary: Get the current user's own investor profile
  *     security: [{ BearerAuth: [] }]
  *     x-required-roles: [investor]
  *     responses:
- *       200: { description: OK }
- *       404: { $ref: '#/components/responses/NotFound' }
+ *       200: { $ref: '#/components/responses/InvestorResponse' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       403: { $ref: '#/components/responses/Forbidden' }
+ *       404: { $ref: '#/components/responses/NotFound' }
  */
 router.get("/me", authenticate, authorize(ROLES.INVESTOR), controller.getMine);
 
 /**
  * @swagger
- * /api/investors/{id}:
+ * /api/v1/investors/{id}:
  *   get:
  *     tags: [Investors]
  *     summary: Get an investor's public profile by id
@@ -54,9 +55,9 @@ router.get("/me", authenticate, authorize(ROLES.INVESTOR), controller.getMine);
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: OK }
- *       404: { $ref: '#/components/responses/NotFound' }
+ *       200: { $ref: '#/components/responses/PublicInvestorProfileResponse' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       404: { $ref: '#/components/responses/NotFound' }
  */
 router.get("/:id", authenticate, controller.getById);
 

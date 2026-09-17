@@ -82,7 +82,7 @@ describe("Socket.IO handshake authentication", () => {
 
   test("a token from a revoked session (logout-all) is rejected", async () => {
     const { accessToken } = await registerUser();
-    await request(app).post("/api/auth/logout-all").set("Authorization", `Bearer ${accessToken}`).expect(200);
+    await request(app).post("/api/v1/auth/logout-all").set("Authorization", `Bearer ${accessToken}`).expect(200);
     await rejected(connectWithToken(accessToken));
   });
 
@@ -91,7 +91,7 @@ describe("Socket.IO handshake authentication", () => {
     const client = connectWithToken(accessToken);
     await connected(client);
     const disconnected = new Promise((resolve) => client.once("disconnect", resolve));
-    await request(app).post("/api/auth/logout-all").set("Authorization", `Bearer ${accessToken}`).expect(200);
+    await request(app).post("/api/v1/auth/logout-all").set("Authorization", `Bearer ${accessToken}`).expect(200);
     await disconnected;
   });
 
@@ -121,7 +121,7 @@ describe("presence (who may see that a user is online)", () => {
   test("only conversation partners are told; strangers with the same role are not", async () => {
     const [alice, partner, stranger] = await Promise.all([registerUser(), registerUser(), registerUser()]);
     await request(app)
-      .post("/api/messages")
+      .post("/api/v1/messages")
       .set("Authorization", `Bearer ${partner.accessToken}`)
       .send({ receiverId: alice.user._id, body: "hello" })
       .expect(201);
@@ -148,7 +148,7 @@ describe("presence (who may see that a user is online)", () => {
   test("a second tab doesn't re-announce online, and closing one of two tabs doesn't announce offline", async () => {
     const [alice, partner] = await Promise.all([registerUser(), registerUser()]);
     await request(app)
-      .post("/api/messages")
+      .post("/api/v1/messages")
       .set("Authorization", `Bearer ${alice.accessToken}`)
       .send({ receiverId: partner.user._id, body: "hi" })
       .expect(201);
@@ -174,7 +174,7 @@ describe("admin deactivation", () => {
     await connected(client);
     const disconnected = new Promise((resolve) => client.once("disconnect", resolve));
     await request(app)
-      .patch(`/api/users/${user._id}/status`)
+      .patch(`/api/v1/users/${user._id}/status`)
       .set("Authorization", `Bearer ${admin.accessToken}`)
       .send({ isActive: false })
       .expect(200);
@@ -199,14 +199,14 @@ describe("chat:message", () => {
     expect(eveReceived).toBe(false);
   });
 
-  test("applies the same recipient rules as REST: self is a VALIDATION_ERROR, missing or deactivated is NOT_FOUND", async () => {
+  test("applies the same recipient rules as REST: self is SELF_MESSAGE_NOT_ALLOWED, missing or deactivated is NOT_FOUND", async () => {
     const [sender, deactivated] = await Promise.all([registerUser(), registerUser()]);
     await User.updateOne({ _id: deactivated.user._id }, { isActive: false });
     const socket = connectWithToken(sender.accessToken);
     await connected(socket);
 
     const toSelf = await emitWithAck(socket, "chat:message", { receiverId: sender.user._id, body: "me" });
-    expect(toSelf.error.code).toBe("VALIDATION_ERROR");
+    expect(toSelf.error.code).toBe("SELF_MESSAGE_NOT_ALLOWED");
     for (const receiverId of ["507f1f77bcf86cd799439011", deactivated.user._id]) {
       const ack = await emitWithAck(socket, "chat:message", { receiverId, body: "x" });
       expect(ack).toEqual({ ok: false, error: { code: "NOT_FOUND", message: "Recipient not found" } });

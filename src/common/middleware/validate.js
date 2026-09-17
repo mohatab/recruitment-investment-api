@@ -10,8 +10,9 @@ module.exports = function validate(schema, property = "body") {
       stripUnknown: true,
     });
     if (error) {
-      const details = error.details.map((d) => d.message);
-      return next(new ValidationError(details.join("; "), details));
+      // [{ field, message }] so a client can show the message next to the input.
+      const details = error.details.map((d) => ({ field: d.path.join("."), message: d.message }));
+      return next(new ValidationError(details.map((d) => d.message).join("; "), details));
     }
     req[property] = value;
     next();

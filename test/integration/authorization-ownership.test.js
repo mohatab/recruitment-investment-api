@@ -37,13 +37,13 @@ const JOB = {
 const STARTUP = { name: "Acme", description: "desc", totalRaising: 100000, minInvestment: 100 };
 
 async function postJob(recruiter) {
-  const res = await as(recruiter).post("/api/jobs", JOB);
+  const res = await as(recruiter).post("/api/v1/jobs", JOB);
   expect(res.status).toBe(201);
   return res.body.data;
 }
 
 async function apply(candidate, jobId, extra = {}) {
-  const res = await as(candidate).post(`/api/jobs/${jobId}/applications`, {
+  const res = await as(candidate).post(`/api/v1/jobs/${jobId}/applications`, {
     coverLetter: "I would love to join the team",
     resumeUrl: "https://example.com/cv.pdf",
     ...extra,
@@ -60,7 +60,7 @@ const expectForbidden = (res) => {
 describe("client-controlled role and account fields", () => {
   test("PATCH /users/me cannot change role, email, account status, verification or session version", async () => {
     const user = await registerUser({ role: "candidate" }, { verified: false });
-    const res = await as(user).patch("/api/users/me", {
+    const res = await as(user).patch("/api/v1/users/me", {
       firstName: "Renamed",
       role: "admin",
       email: "takeover@example.com",
@@ -76,9 +76,9 @@ describe("client-controlled role and account fields", () => {
     expect(stored.email).toBe(user.user.email);
     expect(stored.emailVerifiedAt).toBeNull();
     expect(
-      (await request(app).post("/api/auth/login").send({ email: user.user.email, password: "password123" })).status
+      (await request(app).post("/api/v1/auth/login").send({ email: user.user.email, password: "password123" })).status
     ).toBe(200);
-    expectForbidden(await as(user).get("/api/users"));
+    expectForbidden(await as(user).get("/api/v1/users"));
   });
 });
 
@@ -90,10 +90,10 @@ describe("jobs and applications", () => {
     ]);
     const job = await postJob(owner);
 
-    await as(owner).patch(`/api/jobs/${job._id}`, { title: "Updated", recruiter: other.user._id }).expect(200);
+    await as(owner).patch(`/api/v1/jobs/${job._id}`, { title: "Updated", recruiter: other.user._id }).expect(200);
     expect(String((await Job.findById(job._id)).recruiter)).toBe(owner.user._id);
-    expectForbidden(await as(other).patch(`/api/jobs/${job._id}`, { title: "Hijacked" }));
-    expectForbidden(await as(other).delete(`/api/jobs/${job._id}`));
+    expectForbidden(await as(other).patch(`/api/v1/jobs/${job._id}`, { title: "Hijacked" }));
+    expectForbidden(await as(other).delete(`/api/v1/jobs/${job._id}`));
     expect((await Job.findById(job._id)).title).toBe("Updated");
   });
 
@@ -102,7 +102,7 @@ describe("jobs and applications", () => {
       registerUser({ role: "recruiter" }),
       registerUser({ role: "recruiter" }),
     ]);
-    const res = await as(recruiter).post("/api/jobs", { ...JOB, recruiter: victim.user._id, status: "closed" });
+    const res = await as(recruiter).post("/api/v1/jobs", { ...JOB, recruiter: victim.user._id, status: "closed" });
     expect(res.body.data.recruiter).toBe(recruiter.user._id);
   });
 
@@ -131,8 +131,10 @@ describe("jobs and applications", () => {
     const job = await postJob(owner);
     const application = await apply(candidate, job._id);
 
-    expectForbidden(await as(other).get(`/api/jobs/${job._id}/applications`));
-    expectForbidden(await as(other).patch(`/api/applications/${application._id}/status`, { status: "under_review" }));
+    expectForbidden(await as(other).get(`/api/v1/jobs/${job._id}/applications`));
+    expectForbidden(
+      await as(other).patch(`/api/v1/applications/${application._id}/status`, { status: "under_review" })
+    );
     expect((await Application.findById(application._id)).status).toBe("submitted");
   });
 
@@ -142,7 +144,9 @@ describe("jobs and applications", () => {
       registerUser({ role: "candidate" }),
     ]);
     const application = await apply(candidate, (await postJob(recruiter))._id);
-    expectForbidden(await as(candidate).patch(`/api/applications/${application._id}/status`, { status: "accepted" }));
+    expectForbidden(
+      await as(candidate).patch(`/api/v1/applications/${application._id}/status`, { status: "accepted" })
+    );
   });
 
   // Regression: application.job was null for a deleted job, so the ownership
@@ -157,7 +161,7 @@ describe("jobs and applications", () => {
     await Job.deleteOne({ _id: job._id });
 
     expectForbidden(
-      await as(recruiter).patch(`/api/applications/${application._id}/status`, { status: "under_review" })
+      await as(recruiter).patch(`/api/v1/applications/${application._id}/status`, { status: "under_review" })
     );
   });
 
@@ -171,9 +175,9 @@ describe("jobs and applications", () => {
     await apply(alice, job._id);
     await apply(bob, job._id);
 
-    const mine = await as(alice).get("/api/applications/mine?limit=100");
+    const mine = await as(alice).get("/api/v1/applications/mine?limit=100");
     expect(mine.body.data).toHaveLength(1);
-    expect(mine.body.meta.total).toBe(1);
+    expect(mine.body.pagination.total).toBe(1);
   });
 });
 
@@ -181,11 +185,15 @@ describe("startups, investors and investments", () => {
   test("PUT /startups/me cannot set owner or raisedSoFar, and never touches another startup's profile", async () => {
     const [founder, rival] = await Promise.all([registerUser({ role: "startup" }), registerUser({ role: "startup" })]);
     await as(rival)
-      .put("/api/startups/me", { ...STARTUP, name: "Rival" })
-      .expect(200);
+      .put("/api/v1/startups/me", { ...STARTUP, name: "Rival" })
+      .expect(201);
 
-    const res = await as(founder).put("/api/startups/me", { ...STARTUP, owner: rival.user._id, raisedSoFar: 999999 });
-    expect(res.status).toBe(200);
+    const res = await as(founder).put("/api/v1/startups/me", {
+      ...STARTUP,
+      owner: rival.user._id,
+      raisedSoFar: 999999,
+    });
+    expect(res.status).toBe(201); // first PUT creates the profile
     expect(res.body.data).toMatchObject({ owner: founder.user._id, raisedSoFar: 0, name: "Acme" });
 
     const rivalProfile = await Startup.findOne({ owner: rival.user._id });
@@ -198,7 +206,7 @@ describe("startups, investors and investments", () => {
       registerUser({ role: "investor" }),
       registerUser({ role: "investor" }),
     ]);
-    const res = await as(investor).put("/api/investors/me", { aboutMe: "mine", owner: victim.user._id });
+    const res = await as(investor).put("/api/v1/investors/me", { aboutMe: "mine", owner: victim.user._id });
     expect(res.body.data.owner).toBe(investor.user._id);
     expect(await Investor.exists({ owner: victim.user._id })).toBeNull();
   });
@@ -208,19 +216,19 @@ describe("startups, investors and investments", () => {
   test("an investor's criteria are private: other users (including startups) get a public profile only", async () => {
     const investor = await registerUser({ role: "investor" });
     const profile = (
-      await as(investor).put("/api/investors/me", {
+      await as(investor).put("/api/v1/investors/me", {
         aboutMe: "Seed investor",
         criteria: { minInvestment: 5000, maxInvestment: 250000, industries: ["fintech"], stages: ["seed"] },
       })
     ).body.data;
 
     for (const viewer of [await registerUser({ role: "startup" }), await registerUser({ role: "investor" })]) {
-      const res = await as(viewer).get(`/api/investors/${profile._id}`);
+      const res = await as(viewer).get(`/api/v1/investors/${profile._id}`);
       expect(res.status).toBe(200);
       expect(res.body.data.aboutMe).toBe("Seed investor");
       expect(res.body.data.criteria).toBeUndefined();
     }
-    expect((await as(investor).get("/api/investors/me")).body.data.criteria.maxInvestment).toBe(250000);
+    expect((await as(investor).get("/api/v1/investors/me")).body.data.criteria.maxInvestment).toBe(250000);
   });
 
   test("investment lists are scoped to the caller: investors see their own, startups see only theirs", async () => {
@@ -230,14 +238,14 @@ describe("startups, investors and investments", () => {
       registerUser({ role: "investor" }),
       registerUser({ role: "investor" }),
     ]);
-    const startupA = (await as(founderA).put("/api/startups/me", STARTUP)).body.data;
-    const startupB = (await as(founderB).put("/api/startups/me", STARTUP)).body.data;
-    await as(investorA).post("/api/investments", { startupId: startupA._id, amount: 500 }).expect(201);
-    await as(investorB).post("/api/investments", { startupId: startupB._id, amount: 700 }).expect(201);
+    const startupA = (await as(founderA).put("/api/v1/startups/me", STARTUP)).body.data;
+    const startupB = (await as(founderB).put("/api/v1/startups/me", STARTUP)).body.data;
+    await as(investorA).post("/api/v1/investments", { startupId: startupA._id, amount: 500 }).expect(201);
+    await as(investorB).post("/api/v1/investments", { startupId: startupB._id, amount: 700 }).expect(201);
 
-    const mineA = (await as(investorA).get("/api/investments/mine")).body.data;
+    const mineA = (await as(investorA).get("/api/v1/investments/mine")).body.data;
     expect(mineA.map((i) => i.amount)).toEqual([500]);
-    const receivedB = (await as(founderB).get("/api/investments/startup")).body.data;
+    const receivedB = (await as(founderB).get("/api/v1/investments/startup")).body.data;
     expect(receivedB.map((i) => i.amount)).toEqual([700]);
   });
 
@@ -247,8 +255,8 @@ describe("startups, investors and investments", () => {
       registerUser({ role: "investor" }),
       registerUser({ role: "investor" }),
     ]);
-    const startup = (await as(founder).put("/api/startups/me", STARTUP)).body.data;
-    const res = await as(investor).post("/api/investments", {
+    const startup = (await as(founder).put("/api/v1/startups/me", STARTUP)).body.data;
+    const res = await as(investor).post("/api/v1/investments", {
       startupId: startup._id,
       amount: 500,
       investor: victim.user._id,
@@ -264,14 +272,14 @@ describe("startups, investors and investments", () => {
       registerUser({ role: "investor" }),
     ]);
     const admin = await createAdmin();
-    const startup = (await as(founder).put("/api/startups/me", STARTUP)).body.data;
-    const { investment } = (await as(investor).post("/api/investments", { startupId: startup._id, amount: 500 })).body
-      .data;
+    const startup = (await as(founder).put("/api/v1/startups/me", STARTUP)).body.data;
+    const { investment } = (await as(investor).post("/api/v1/investments", { startupId: startup._id, amount: 500 }))
+      .body.data;
 
-    expectForbidden(await as(investor).post(`/api/investments/${investment._id}/refund`));
-    expectForbidden(await as(founder).post(`/api/investments/${investment._id}/refund`));
+    expectForbidden(await as(investor).post(`/api/v1/investments/${investment._id}/refund`));
+    expectForbidden(await as(founder).post(`/api/v1/investments/${investment._id}/refund`));
     // Admin passes authorization; the investment is still pending, so the business rule answers.
-    expect((await as(admin).post(`/api/investments/${investment._id}/refund`)).status).toBe(400);
+    expect((await as(admin).post(`/api/v1/investments/${investment._id}/refund`)).status).toBe(422);
   });
 });
 
@@ -279,7 +287,7 @@ describe("experience", () => {
   test("entries belong to the caller regardless of `user` in the body, and only the owner can delete", async () => {
     const [owner, other] = await Promise.all([registerUser(), registerUser()]);
     const entry = (
-      await as(owner).post("/api/experiences", {
+      await as(owner).post("/api/v1/experiences", {
         jobTitle: "Engineer",
         companyName: "Acme",
         startDate: "2020-01-01",
@@ -289,19 +297,21 @@ describe("experience", () => {
     ).body.data;
     expect(entry.user).toBe(owner.user._id);
 
-    expectForbidden(await as(other).delete(`/api/experiences/${entry._id}`));
+    expectForbidden(await as(other).delete(`/api/v1/experiences/${entry._id}`));
     expect(await Experience.exists({ _id: entry._id })).not.toBeNull();
-    expect((await as(other).get("/api/experiences")).body.data).toEqual([]);
+    expect((await as(other).get("/api/v1/experiences")).body.data).toEqual([]);
   });
 });
 
 describe("messages", () => {
   test("the sender is the session user even if `sender` is in the body", async () => {
     const [alice, bob, eve] = await Promise.all([registerUser(), registerUser(), registerUser()]);
-    await as(eve).post("/api/messages", { receiverId: bob.user._id, body: "hi", sender: alice.user._id }).expect(201);
+    await as(eve)
+      .post("/api/v1/messages", { receiverId: bob.user._id, body: "hi", sender: alice.user._id })
+      .expect(201);
     const stored = await Message.findOne();
     expect(String(stored.sender)).toBe(eve.user._id);
-    expect((await as(alice).get(`/api/messages/${bob.user._id}`)).body.data).toEqual([]);
+    expect((await as(alice).get(`/api/v1/messages/${bob.user._id}`)).body.data).toEqual([]);
   });
 
   // Regression: messages could be addressed to nonexistent or deactivated
@@ -310,11 +320,12 @@ describe("messages", () => {
     const [sender, deactivated] = await Promise.all([registerUser(), registerUser()]);
     await User.updateOne({ _id: deactivated.user._id }, { isActive: false });
 
-    const toSelf = await as(sender).post("/api/messages", { receiverId: sender.user._id, body: "me" });
-    expect(toSelf.status).toBe(400);
-    const toNobody = await as(sender).post("/api/messages", { receiverId: "507f1f77bcf86cd799439011", body: "x" });
+    const toSelf = await as(sender).post("/api/v1/messages", { receiverId: sender.user._id, body: "me" });
+    expect(toSelf.status).toBe(422);
+    expect(toSelf.body.error.code).toBe("SELF_MESSAGE_NOT_ALLOWED");
+    const toNobody = await as(sender).post("/api/v1/messages", { receiverId: "507f1f77bcf86cd799439011", body: "x" });
     expect(toNobody.status).toBe(404);
-    const toDeactivated = await as(sender).post("/api/messages", { receiverId: deactivated.user._id, body: "x" });
+    const toDeactivated = await as(sender).post("/api/v1/messages", { receiverId: deactivated.user._id, body: "x" });
     expect(toDeactivated.status).toBe(404);
     expect(toDeactivated.body.error).toEqual(toNobody.body.error); // indistinguishable
     expect(await Message.countDocuments()).toBe(0);
@@ -324,7 +335,7 @@ describe("messages", () => {
 describe("admin operations", () => {
   test("an admin sending a direct notification to a nonexistent user gets 404 and nothing is stored", async () => {
     const admin = await createAdmin();
-    const res = await as(admin).post("/api/notifications/broadcast", {
+    const res = await as(admin).post("/api/v1/notifications/broadcast", {
       message: "hello",
       userId: "507f1f77bcf86cd799439011",
     });
@@ -334,7 +345,7 @@ describe("admin operations", () => {
   test("a deactivated admin loses admin access immediately", async () => {
     const admin = await createAdmin();
     const otherAdmin = await createAdmin();
-    await as(otherAdmin).patch(`/api/users/${admin.user._id}/status`, { isActive: false }).expect(200);
-    expect((await as(admin).get("/api/users")).status).toBe(401);
+    await as(otherAdmin).patch(`/api/v1/users/${admin.user._id}/status`, { isActive: false }).expect(200);
+    expect((await as(admin).get("/api/v1/users")).status).toBe(401);
   });
 });

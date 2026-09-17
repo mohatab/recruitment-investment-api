@@ -1,0 +1,37 @@
+// Stable, machine-readable error codes. Clients branch on these, so the
+// strings are part of the API contract: add new ones rather than renaming.
+module.exports = {
+  // 400 — the request itself is malformed
+  VALIDATION_ERROR: "VALIDATION_ERROR", // body/query/params failed their schema
+  INVALID_JSON: "INVALID_JSON",
+  INVALID_ID: "INVALID_ID", // not a valid resource id
+  INVALID_TOKEN: "INVALID_TOKEN", // password-reset / email-verification token
+  BAD_REQUEST: "BAD_REQUEST",
+
+  // 401 / 403
+  UNAUTHORIZED: "UNAUTHORIZED", // no valid session
+  ACCOUNT_DISABLED: "ACCOUNT_DISABLED",
+  FORBIDDEN: "FORBIDDEN", // wrong role, or not the owner
+  EMAIL_NOT_VERIFIED: "EMAIL_NOT_VERIFIED",
+
+  // 404 / 409
+  NOT_FOUND: "NOT_FOUND",
+  CONFLICT: "CONFLICT",
+  DUPLICATE_KEY: "DUPLICATE_KEY",
+
+  // 413 / 415 / 429 / 500 / 503
+  PAYLOAD_TOO_LARGE: "PAYLOAD_TOO_LARGE",
+  UPLOAD_ERROR: "UPLOAD_ERROR",
+  UNSUPPORTED_MEDIA_TYPE: "UNSUPPORTED_MEDIA_TYPE",
+  TOO_MANY_REQUESTS: "TOO_MANY_REQUESTS",
+  INTERNAL_ERROR: "INTERNAL_ERROR",
+
+  // 422 — syntactically valid, but the domain refuses it
+  JOB_CLOSED: "JOB_CLOSED",
+  RESUME_REQUIRED: "RESUME_REQUIRED",
+  INVALID_STATUS_TRANSITION: "INVALID_STATUS_TRANSITION",
+  MINIMUM_INVESTMENT_NOT_MET: "MINIMUM_INVESTMENT_NOT_MET",
+  INVESTMENT_NOT_REFUNDABLE: "INVESTMENT_NOT_REFUNDABLE",
+  SELF_MESSAGE_NOT_ALLOWED: "SELF_MESSAGE_NOT_ALLOWED",
+  SELF_STATUS_CHANGE_NOT_ALLOWED: "SELF_STATUS_CHANGE_NOT_ALLOWED",
+};

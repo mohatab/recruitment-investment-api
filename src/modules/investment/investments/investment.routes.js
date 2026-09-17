@@ -10,7 +10,7 @@ router.use(authenticate);
 
 /**
  * @swagger
- * /api/investments:
+ * /api/v1/investments:
  *   post:
  *     tags: [Investments]
  *     summary: Start an investment (creates a Stripe PaymentIntent; confirm client-side with the returned clientSecret)
@@ -23,46 +23,57 @@ router.use(authenticate);
  *         application/json:
  *           schema: { type: object, required: [startupId, amount], properties: { startupId: { type: string }, amount: { type: number } } }
  *     responses:
- *       201: { description: Created }
- *       400: { description: Amount below the startup's minimum investment }
- *       403: { description: "FORBIDDEN (not an investor) or EMAIL_NOT_VERIFIED" }
+ *       201: { $ref: '#/components/responses/InvestmentCreatedResponse' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
+ *       404: { $ref: '#/components/responses/NotFound' }
+ *       422: { $ref: '#/components/responses/UnprocessableEntity' }
  */
 router.post("/", authorize(ROLES.INVESTOR), requireVerifiedEmail, validate(schemas.create), controller.create);
 
 /**
  * @swagger
- * /api/investments/mine:
+ * /api/v1/investments/mine:
  *   get:
  *     tags: [Investments]
  *     summary: List the current investor's own investments
  *     security: [{ BearerAuth: [] }]
+ *     parameters:
+ *       - $ref: '#/components/parameters/Page'
+ *       - $ref: '#/components/parameters/Limit'
+ *       - $ref: '#/components/parameters/Sort'
  *     x-required-roles: [investor]
  *     responses:
- *       200: { description: OK }
+ *       200: { $ref: '#/components/responses/InvestmentListResponse' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       403: { $ref: '#/components/responses/Forbidden' }
  */
-router.get("/mine", authorize(ROLES.INVESTOR), controller.listMine);
+router.get("/mine", authorize(ROLES.INVESTOR), validate(schemas.list, "query"), controller.listMine);
 
 /**
  * @swagger
- * /api/investments/startup:
+ * /api/v1/investments/startup:
  *   get:
  *     tags: [Investments]
  *     summary: List investments received by the current user's startup
  *     security: [{ BearerAuth: [] }]
+ *     parameters:
+ *       - $ref: '#/components/parameters/Page'
+ *       - $ref: '#/components/parameters/Limit'
+ *       - $ref: '#/components/parameters/Sort'
  *     x-required-roles: [startup]
  *     responses:
- *       200: { description: OK }
+ *       200: { $ref: '#/components/responses/InvestmentListResponse' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       403: { $ref: '#/components/responses/Forbidden' }
+ *       404: { $ref: '#/components/responses/NotFound' }
  */
-router.get("/startup", authorize(ROLES.STARTUP), controller.listForMyStartup);
+router.get("/startup", authorize(ROLES.STARTUP), validate(schemas.list, "query"), controller.listForMyStartup);
 
 /**
  * @swagger
- * /api/investments/{id}/refund:
+ * /api/v1/investments/{id}/refund:
  *   post:
  *     tags: [Investments]
  *     summary: Refund a paid investment (admin only — investors cannot reclaim money already credited to a startup)
@@ -74,10 +85,12 @@ router.get("/startup", authorize(ROLES.STARTUP), controller.listForMyStartup);
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: Refunded }
- *       400: { description: Only a paid investment can be refunded }
+ *       200: { $ref: '#/components/responses/InvestmentResponse' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       403: { $ref: '#/components/responses/Forbidden' }
+ *       404: { $ref: '#/components/responses/NotFound' }
+ *       422: { $ref: '#/components/responses/UnprocessableEntity' }
  */
 router.post("/:id/refund", authorize(ROLES.ADMIN), controller.refund);
 

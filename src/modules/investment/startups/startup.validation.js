@@ -1,5 +1,7 @@
 const Joi = require("joi");
 const { STAGES } = require("./startup.model");
+const { listQuery } = require("../../../common/utils/pagination");
+const { SORTABLE } = require("./startup.service");
 
 const upsert = Joi.object({
   name: Joi.string().required(),
@@ -17,13 +19,12 @@ const upsert = Joi.object({
   minInvestment: Joi.number().min(0).required(),
 });
 
-const list = Joi.object({
-  page: Joi.number().integer().min(1),
-  limit: Joi.number().integer().min(1).max(100),
-  sort: Joi.string(),
-  industry: Joi.string(),
+const list = listQuery(SORTABLE, {
+  industry: Joi.string().max(120),
   stage: Joi.string().valid(...STAGES),
 });
+
+const matches = listQuery(SORTABLE);
 
 const successAssessment = Joi.object({
   isSoftwareBased: Joi.boolean().required(),
@@ -32,4 +33,4 @@ const successAssessment = Joi.object({
   totalFunding: Joi.number().min(0).required(),
 });
 
-module.exports = { upsert, list, successAssessment };
+module.exports = { upsert, list, matches, successAssessment };

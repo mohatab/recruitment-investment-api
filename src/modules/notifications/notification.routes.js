@@ -10,20 +10,24 @@ router.use(authenticate);
 
 /**
  * @swagger
- * /api/notifications:
+ * /api/v1/notifications:
  *   get:
  *     tags: [Notifications]
  *     summary: List the current user's notifications (personal + their role's broadcasts)
  *     security: [{ BearerAuth: [] }]
+ *     parameters:
+ *       - $ref: '#/components/parameters/Page'
+ *       - $ref: '#/components/parameters/Limit'
+ *       - $ref: '#/components/parameters/Sort'
  *     responses:
- *       200: { description: OK }
+ *       200: { $ref: '#/components/responses/NotificationListResponse' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  */
-router.get("/", controller.listMine);
+router.get("/", validate(schemas.list, "query"), controller.listMine);
 
 /**
  * @swagger
- * /api/notifications/{id}/read:
+ * /api/v1/notifications/{id}/read:
  *   patch:
  *     tags: [Notifications]
  *     summary: Mark a notification as read (owner only)
@@ -34,15 +38,16 @@ router.get("/", controller.listMine);
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: Updated }
- *       403: { $ref: '#/components/responses/Forbidden' }
+ *       200: { $ref: '#/components/responses/NotificationResponse' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
+ *       404: { $ref: '#/components/responses/NotFound' }
  */
 router.patch("/:id/read", controller.markRead);
 
 /**
  * @swagger
- * /api/notifications/broadcast:
+ * /api/v1/notifications/broadcast:
  *   post:
  *     tags: [Notifications]
  *     summary: Manually send a notification to a user or role (admin only)
@@ -54,9 +59,10 @@ router.patch("/:id/read", controller.markRead);
  *         application/json:
  *           schema: { type: object, required: [message], properties: { message: { type: string }, userId: { type: string }, targetRole: { type: string } } }
  *     responses:
- *       200: { description: Sent }
- *       403: { $ref: '#/components/responses/Forbidden' }
+ *       201: { $ref: '#/components/responses/NotificationResponse' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
+ *       404: { $ref: '#/components/responses/NotFound' }
  */
 router.post("/broadcast", authorize(ROLES.ADMIN), validate(schemas.broadcast), controller.broadcast);
 

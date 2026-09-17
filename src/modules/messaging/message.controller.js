@@ -1,6 +1,6 @@
 const messageService = require("./message.service");
 const asyncHandler = require("../../common/utils/asyncHandler");
-const { ok, created } = require("../../common/utils/response");
+const { created, paginated } = require("../../common/utils/response");
 
 const send = asyncHandler(async (req, res) => {
   const message = await messageService.send(req.user.id, req.body.receiverId, req.body.body);
@@ -8,11 +8,13 @@ const send = asyncHandler(async (req, res) => {
 });
 
 const listConversations = asyncHandler(async (req, res) => {
-  ok(res, await messageService.listConversations(req.user.id));
+  const { items, pagination } = await messageService.listConversations(req.user.id, req.query);
+  paginated(res, items, pagination);
 });
 
 const listWith = asyncHandler(async (req, res) => {
-  ok(res, await messageService.listWith(req.user.id, req.params.userId));
+  const { items, pagination } = await messageService.listWith(req.user.id, req.params.userId, req.query);
+  paginated(res, items, pagination);
 });
 
 module.exports = { send, listConversations, listWith };

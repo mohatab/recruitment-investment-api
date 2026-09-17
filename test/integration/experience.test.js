@@ -9,14 +9,14 @@ const validExperience = {
 
 describe("experience", () => {
   test("requires authentication", async () => {
-    const res = await request(app).post("/api/experiences").send(validExperience);
+    const res = await request(app).post("/api/v1/experiences").send(validExperience);
     expect(res.status).toBe(401);
   });
 
   test("creates an experience entry for the current user", async () => {
     const { accessToken } = await registerUser();
     const res = await request(app)
-      .post("/api/experiences")
+      .post("/api/v1/experiences")
       .set("Authorization", `Bearer ${accessToken}`)
       .send(validExperience);
     expect(res.status).toBe(201);
@@ -26,7 +26,7 @@ describe("experience", () => {
   test("endDate is required unless currentlyWorking is true", async () => {
     const { accessToken } = await registerUser();
     const res = await request(app)
-      .post("/api/experiences")
+      .post("/api/v1/experiences")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({ ...validExperience, currentlyWorking: false });
     expect(res.status).toBe(400);
@@ -36,14 +36,14 @@ describe("experience", () => {
     const userA = await registerUser();
     const userB = await registerUser();
     await request(app)
-      .post("/api/experiences")
+      .post("/api/v1/experiences")
       .set("Authorization", `Bearer ${userA.accessToken}`)
       .send(validExperience);
 
-    const listA = await request(app).get("/api/experiences").set("Authorization", `Bearer ${userA.accessToken}`);
+    const listA = await request(app).get("/api/v1/experiences").set("Authorization", `Bearer ${userA.accessToken}`);
     expect(listA.body.data.length).toBe(1);
 
-    const listB = await request(app).get("/api/experiences").set("Authorization", `Bearer ${userB.accessToken}`);
+    const listB = await request(app).get("/api/v1/experiences").set("Authorization", `Bearer ${userB.accessToken}`);
     expect(listB.body.data.length).toBe(0);
   });
 
@@ -51,19 +51,19 @@ describe("experience", () => {
     const owner = await registerUser();
     const intruder = await registerUser();
     const createRes = await request(app)
-      .post("/api/experiences")
+      .post("/api/v1/experiences")
       .set("Authorization", `Bearer ${owner.accessToken}`)
       .send(validExperience);
     const id = createRes.body.data._id;
 
     const forbidden = await request(app)
-      .delete(`/api/experiences/${id}`)
+      .delete(`/api/v1/experiences/${id}`)
       .set("Authorization", `Bearer ${intruder.accessToken}`);
     expect(forbidden.status).toBe(403);
 
     const allowed = await request(app)
-      .delete(`/api/experiences/${id}`)
+      .delete(`/api/v1/experiences/${id}`)
       .set("Authorization", `Bearer ${owner.accessToken}`);
-    expect(allowed.status).toBe(200);
+    expect(allowed.status).toBe(204);
   });
 });

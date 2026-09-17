@@ -6,16 +6,16 @@ describe("messaging", () => {
     const bob = await registerUser();
 
     const sendRes = await request(app)
-      .post("/api/messages")
+      .post("/api/v1/messages")
       .set("Authorization", `Bearer ${alice.accessToken}`)
       .send({ receiverId: bob.user._id, body: "hey bob" });
     expect(sendRes.status).toBe(201);
 
     const aliceView = await request(app)
-      .get(`/api/messages/${bob.user._id}`)
+      .get(`/api/v1/messages/${bob.user._id}`)
       .set("Authorization", `Bearer ${alice.accessToken}`);
     const bobView = await request(app)
-      .get(`/api/messages/${alice.user._id}`)
+      .get(`/api/v1/messages/${alice.user._id}`)
       .set("Authorization", `Bearer ${bob.accessToken}`);
     expect(aliceView.body.data.length).toBe(1);
     expect(bobView.body.data.length).toBe(1);
@@ -28,7 +28,7 @@ describe("messaging", () => {
     const eve = await registerUser();
 
     await request(app)
-      .post("/api/messages")
+      .post("/api/v1/messages")
       .set("Authorization", `Bearer ${alice.accessToken}`)
       .send({ receiverId: bob.user._id, body: "private" });
 
@@ -36,7 +36,7 @@ describe("messaging", () => {
     // alice-bob's — the room id is derived from the two real participants,
     // so this can never return alice & bob's messages.
     const eveView = await request(app)
-      .get(`/api/messages/${bob.user._id}`)
+      .get(`/api/v1/messages/${bob.user._id}`)
       .set("Authorization", `Bearer ${eve.accessToken}`);
     expect(eveView.status).toBe(200);
     expect(eveView.body.data.length).toBe(0);
@@ -46,11 +46,13 @@ describe("messaging", () => {
     const alice = await registerUser();
     const bob = await registerUser();
     await request(app)
-      .post("/api/messages")
+      .post("/api/v1/messages")
       .set("Authorization", `Bearer ${alice.accessToken}`)
       .send({ receiverId: bob.user._id, body: "hi" });
 
-    const res = await request(app).get("/api/messages/conversations").set("Authorization", `Bearer ${bob.accessToken}`);
+    const res = await request(app)
+      .get("/api/v1/messages/conversations")
+      .set("Authorization", `Bearer ${bob.accessToken}`);
     expect(res.status).toBe(200);
     expect(res.body.data[0].lastMessage).toBe("hi");
   });

@@ -16,9 +16,11 @@ endpoint, not the generic ones (400 `VALIDATION_ERROR` on bad input, 401
 `UNAUTHORIZED` on a missing/invalid token) which apply uniformly and are
 covered once here rather than repeated for every endpoint.
 
+All paths are under `/api/v1` (health probes excepted). Swagger at `/api-docs` is authoritative for request/response schemas; this table is the quick index.
+
 Authorization for every route is declared in Swagger (`security`, `x-required-roles`) and tested route by route; see [SECURITY.md](./SECURITY.md#authorization).
 
-## Auth (`/api/auth`) — rate-limited (20/15min per IP)
+## Auth (`/api/v1/auth`) — rate-limited (20/15min per IP)
 
 | Method | Path                   | Auth                  | Body                                                                            | Success                                              | Distinguishing errors                                                       | Test                                         | Swagger |
 | ------ | ---------------------- | --------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------- | ------- |
@@ -32,7 +34,7 @@ Authorization for every route is declared in Swagger (`security`, `x-required-ro
 | POST   | `/verify-email`        | token in body         | token                                                                           | 200                                                  | 400 `INVALID_TOKEN`                                                         | `email-verification.test.js`                 | ✅      |
 | POST   | `/resend-verification` | any authenticated     | —                                                                               | 200 (no-op if verified or sent within a minute)      | 401                                                                         | `email-verification.test.js`                 | ✅      |
 
-## Users (`/api/users`) — all require auth unless noted
+## Users (`/api/v1/users`) — all require auth unless noted
 
 | Method | Path           | Auth/Role         | Body/Params                                                                                                                              | Success                                                                                         | Distinguishing errors               | Test            | Swagger |
 | ------ | -------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------- | --------------- | ------- |
@@ -44,26 +46,26 @@ Authorization for every route is declared in Swagger (`security`, `x-required-ro
 | GET    | `/:id`         | any authenticated | —                                                                                                                                        | 200, **limited** profile (firstName, lastName, role, createdAt only — no phone/email/birthdate) | 404                                 | `users.test.js` | ✅      |
 | PATCH  | `/:id/status`  | `admin`           | isActive (boolean)                                                                                                                       | 200; deactivation revokes all sessions and blocks login                                         | 400 own account, 403 non-admin, 404 | `users.test.js` | ✅      |
 
-## Jobs (`/api/jobs`)
+## Jobs (`/api/v1/jobs`)
 
 | Method | Path   | Auth/Role               | Body/Params                                                                                                                                      | Success        | Distinguishing errors                      | Test                        | Swagger |
 | ------ | ------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------- | ------------------------------------------ | --------------------------- | ------- |
 | GET    | `/`    | none                    | query: search?, role?, location?, minSalary?, status? (default `open`), page?, limit?, sort?                                                     | 200, paginated | —                                          | `jobs-applications.test.js` | ✅      |
 | GET    | `/:id` | none                    | —                                                                                                                                                | 200            | 404                                        | `jobs-applications.test.js` | ✅      |
 | POST   | `/`    | `recruiter`             | title, role, description, responsibilities, minSalary, maxSalary (≥minSalary), salaryType, expirationDate (future), tags?, vacancies?, location? | 201            | 403 non-recruiter, 400 maxSalary<minSalary | `jobs-applications.test.js` | ✅      |
-| PATCH  | `/:id` | `recruiter`, owner only | any create field, optional; status?                                                                                                              | 200            | 403 not owner                              | `jobs-applications.test.js` | ✅      |
-| DELETE | `/:id` | `recruiter`, owner only | —                                                                                                                                                | 200            | 403 not owner                              | `jobs-applications.test.js` | ✅      |
+| PATCH  | `/:id` | `recruiter`, owner only | any create field, optional; status?                                                                                                              | 204            | 403 not owner                              | `jobs-applications.test.js` | ✅      |
+| DELETE | `/:id` | `recruiter`, owner only | —                                                                                                                                                | 204            | 403 not owner                              | `jobs-applications.test.js` | ✅      |
 
-## Applications — nested (`/api/jobs/:jobId/applications`) and top-level (`/api/applications`)
+## Applications — nested (`/api/v1/jobs/:jobId/applications`) and top-level (`/api/v1/applications`)
 
-| Method | Path                            | Auth/Role                          | Body/Params                                                    | Success                                              | Distinguishing errors                                        | Test                        | Swagger |
-| ------ | ------------------------------- | ---------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------ | --------------------------- | ------- |
-| POST   | `/api/jobs/:jobId/applications` | `candidate`                        | coverLetter (≥10 chars), resumeUrl? (falls back to on-file CV) | 201, status `submitted`                              | 400 no CV/resumeUrl or job closed, 409 duplicate application | `jobs-applications.test.js` | ✅      |
-| GET    | `/api/jobs/:jobId/applications` | `recruiter`, owner of the job only | query: status?                                                 | 200, paginated, applicant populated                  | 403 not the job's recruiter                                  | `jobs-applications.test.js` | ✅      |
-| GET    | `/api/applications/mine`        | `candidate`                        | —                                                              | 200, paginated, own applications only, job populated | —                                                            | `jobs-applications.test.js` | ✅      |
-| PATCH  | `/api/applications/:id/status`  | `recruiter`, owner of the job only | status (one of the lifecycle values)                           | 200                                                  | 400 invalid transition, 403 not owner                        | `jobs-applications.test.js` | ✅      |
+| Method | Path                               | Auth/Role                          | Body/Params                                                    | Success                                              | Distinguishing errors                                        | Test                        | Swagger |
+| ------ | ---------------------------------- | ---------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------ | --------------------------- | ------- |
+| POST   | `/api/v1/jobs/:jobId/applications` | `candidate`                        | coverLetter (≥10 chars), resumeUrl? (falls back to on-file CV) | 201, status `submitted`                              | 400 no CV/resumeUrl or job closed, 409 duplicate application | `jobs-applications.test.js` | ✅      |
+| GET    | `/api/v1/jobs/:jobId/applications` | `recruiter`, owner of the job only | query: status?                                                 | 200, paginated, applicant populated                  | 403 not the job's recruiter                                  | `jobs-applications.test.js` | ✅      |
+| GET    | `/api/v1/applications/mine`        | `candidate`                        | —                                                              | 200, paginated, own applications only, job populated | —                                                            | `jobs-applications.test.js` | ✅      |
+| PATCH  | `/api/v1/applications/:id/status`  | `recruiter`, owner of the job only | status (one of the lifecycle values)                           | 200                                                  | 400 invalid transition, 403 not owner                        | `jobs-applications.test.js` | ✅      |
 
-## Startups (`/api/startups`)
+## Startups (`/api/v1/startups`)
 
 | Method | Path                  | Auth/Role  | Body/Params                                                                                                                                           | Success                                                                                | Distinguishing errors     | Test                 | Swagger |
 | ------ | --------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------- | -------------------- | ------- |
@@ -74,7 +76,7 @@ Authorization for every route is declared in Swagger (`security`, `x-required-ro
 | GET    | `/me`                 | `startup`  | —                                                                                                                                                     | 200, own profile                                                                       | 404 not created yet       | `investment.test.js` | ✅      |
 | GET    | `/:id`                | none       | —                                                                                                                                                     | 200                                                                                    | 404                       | `investment.test.js` | ✅      |
 
-## Investors (`/api/investors`)
+## Investors (`/api/v1/investors`)
 
 | Method | Path   | Auth/Role         | Body/Params                                                                                                                                                                                     | Success                                                               | Distinguishing errors | Test                                                    | Swagger |
 | ------ | ------ | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | --------------------- | ------------------------------------------------------- | ------- |
@@ -82,7 +84,7 @@ Authorization for every route is declared in Swagger (`security`, `x-required-ro
 | GET    | `/me`  | `investor`        | —                                                                                                                                                                                               | 200, own profile                                                      | 404 not created yet   | `investment.test.js`                                    | ✅      |
 | GET    | `/:id` | any authenticated | —                                                                                                                                                                                               | 200, public profile (investment `criteria` omitted; owner uses `/me`) | 404                   | `investment.test.js`, `authorization-ownership.test.js` | ✅      |
 
-## Investments (`/api/investments`)
+## Investments (`/api/v1/investments`)
 
 | Method | Path          | Auth/Role    | Body/Params                                   | Success                                       | Distinguishing errors                                  | Test                                                          | Swagger |
 | ------ | ------------- | ------------ | --------------------------------------------- | --------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------- | ------- |
@@ -91,13 +93,13 @@ Authorization for every route is declared in Swagger (`security`, `x-required-ro
 | GET    | `/startup`    | `startup`    | —                                             | 200, investments received, investor populated | 404 no startup profile                                 | `payments-webhook.test.js`                                    | ✅      |
 | POST   | `/:id/refund` | `admin` only | —                                             | 200, status → `refunded`, calls Stripe refund | 400 not `paid`, 403 non-admin (including the investor) | `payments-webhook.test.js`, `authorization-ownership.test.js` | ✅      |
 
-## Payments (`/api/payments`) — no auth (verified by Stripe signature instead)
+## Payments (`/api/v1/payments`) — no auth (verified by Stripe signature instead)
 
 | Method | Path       | Auth                                         | Body                  | Success                                                                                                                             | Distinguishing errors | Test                       | Swagger |
 | ------ | ---------- | -------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------- | ------- |
 | POST   | `/webhook` | Stripe signature (`stripe-signature` header) | raw Stripe event JSON | 200 `{received:true}`; `payment_intent.succeeded`/`.payment_failed` handled, others ignored; idempotent (atomic conditional update) | 400 invalid signature | `payments-webhook.test.js` | ✅      |
 
-## Notifications (`/api/notifications`)
+## Notifications (`/api/v1/notifications`)
 
 | Method | Path         | Auth/Role                                                                                    | Body/Params                                            | Success                                        | Distinguishing errors                               | Test                                                       | Swagger |
 | ------ | ------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------- | ------- |
@@ -105,7 +107,7 @@ Authorization for every route is declared in Swagger (`security`, `x-required-ro
 | PATCH  | `/:id/read`  | recipient: personal = its user; broadcast = members of the target role (per-user read state) | —                                                      | 200, `read` for the caller                     | 403 not a recipient, 404                            | `notifications.test.js`                                    | ✅      |
 | POST   | `/broadcast` | `admin`                                                                                      | message, exactly one of userId (must exist)/targetRole | 200                                            | 400 both/neither, 403 non-admin, 404 unknown userId | `notifications.test.js`, `authorization-ownership.test.js` | ✅      |
 
-## Messaging (`/api/messages`)
+## Messaging (`/api/v1/messages`)
 
 | Method | Path             | Auth              | Body/Params      | Success                                                                                                                        | Distinguishing errors                             | Test                                                   | Swagger |
 | ------ | ---------------- | ----------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------ | ------- |
@@ -117,7 +119,7 @@ Socket.IO events (`chat:message`, payload validated with the same schema as `POS
 — see [ARCHITECTURE.md](./ARCHITECTURE.md#real-time-socketio); they aren't
 HTTP endpoints so they're noted here rather than tabulated above.
 
-## Experience (`/api/experiences`)
+## Experience (`/api/v1/experiences`)
 
 | Method | Path   | Auth              | Body/Params                                                                | Success               | Distinguishing errors | Test                 | Swagger |
 | ------ | ------ | ----------------- | -------------------------------------------------------------------------- | --------------------- | --------------------- | -------------------- | ------- |
@@ -125,7 +127,7 @@ HTTP endpoints so they're noted here rather than tabulated above.
 | GET    | `/`    | any authenticated | —                                                                          | 200, own entries only | —                     | `experience.test.js` | ✅      |
 | DELETE | `/:id` | owner only        | —                                                                          | 200                   | 403 not the owner     | `experience.test.js` | ✅      |
 
-## Contact (`/api/contact`) — public
+## Contact (`/api/v1/contact`) — public
 
 | Method | Path | Auth | Body                                                                                                     | Success | Distinguishing errors                       | Test              | Swagger |
 | ------ | ---- | ---- | -------------------------------------------------------------------------------------------------------- | ------- | ------------------------------------------- | ----------------- | ------- |

@@ -5,29 +5,33 @@ const schemas = require("./application.validation");
 const { authenticate, authorize } = require("../../../common/middleware/auth");
 const ROLES = require("../../../common/constants/roles");
 
-// Mounted at /api/applications — the handful of application operations that
+// Mounted at /api/v1/applications — the handful of application operations that
 // aren't scoped to a specific job in the URL.
 const router = express.Router();
 router.use(authenticate);
 
 /**
  * @swagger
- * /api/applications/mine:
+ * /api/v1/applications/mine:
  *   get:
  *     tags: [Applications]
  *     summary: List the current candidate's own applications
  *     security: [{ BearerAuth: [] }]
+ *     parameters:
+ *       - $ref: '#/components/parameters/Page'
+ *       - $ref: '#/components/parameters/Limit'
+ *       - $ref: '#/components/parameters/Sort'
  *     x-required-roles: [candidate]
  *     responses:
- *       200: { description: OK }
+ *       200: { $ref: '#/components/responses/ApplicationListResponse' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       403: { $ref: '#/components/responses/Forbidden' }
  */
-router.get("/mine", authorize(ROLES.CANDIDATE), controller.listMine);
+router.get("/mine", authorize(ROLES.CANDIDATE), validate(schemas.list, "query"), controller.listMine);
 
 /**
  * @swagger
- * /api/applications/{id}/status:
+ * /api/v1/applications/{id}/status:
  *   patch:
  *     tags: [Applications]
  *     summary: Move an application to the next status in its lifecycle (owning recruiter only)
@@ -44,10 +48,12 @@ router.get("/mine", authorize(ROLES.CANDIDATE), controller.listMine);
  *         application/json:
  *           schema: { type: object, required: [status], properties: { status: { type: string, enum: [under_review, shortlisted, interview, accepted, rejected] } } }
  *     responses:
- *       200: { description: Updated }
- *       400: { description: Invalid status transition }
- *       403: { $ref: '#/components/responses/Forbidden' }
+ *       200: { $ref: '#/components/responses/ApplicationResponse' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
+ *       404: { $ref: '#/components/responses/NotFound' }
+ *       422: { $ref: '#/components/responses/UnprocessableEntity' }
  */
 router.patch("/:id/status", authorize(ROLES.RECRUITER), validate(schemas.updateStatus), controller.updateStatus);
 

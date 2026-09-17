@@ -1,15 +1,18 @@
 const Job = require("./job.model");
 const { NotFoundError } = require("../../../common/errors/AppError");
 const assertOwner = require("../../../common/utils/assertOwner");
-const { parsePagination, buildMeta } = require("../../../common/utils/pagination");
+const { parsePagination, buildPagination } = require("../../../common/utils/pagination");
 const escapeRegex = require("../../../common/utils/escapeRegex");
 
 async function create(recruiterId, data) {
   return Job.create({ ...data, recruiter: recruiterId });
 }
 
+// Sortable fields are indexed or cheap; see job.model.js.
+const SORTABLE = ["createdAt", "minSalary", "maxSalary", "expirationDate", "title"];
+
 async function list(query) {
-  const { page, limit, skip, sort } = parsePagination(query);
+  const { page, limit, skip, sort } = parsePagination(query, { allowedSort: SORTABLE });
   const filter = { status: query.status || "open" };
   if (query.role) filter.role = new RegExp(escapeRegex(query.role), "i");
   if (query.location) filter.location = new RegExp(escapeRegex(query.location), "i");
@@ -20,7 +23,7 @@ async function list(query) {
     Job.find(filter).sort(sort).skip(skip).limit(limit),
     Job.countDocuments(filter),
   ]);
-  return { items, meta: buildMeta({ page, limit, total }) };
+  return { items, pagination: buildPagination({ page, limit, total }) };
 }
 
 async function getById(id) {
@@ -43,4 +46,4 @@ async function remove(id, userId) {
   await job.deleteOne();
 }
 
-module.exports = { create, list, getById, update, remove };
+module.exports = { create, list, getById, update, remove, SORTABLE };

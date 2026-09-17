@@ -9,9 +9,9 @@ const User = require("../../src/modules/users/user.model");
 const AuthToken = require("../../src/modules/auth/authToken.model");
 const env = require("../../src/config/env");
 
-const forgot = (email) => request(app).post("/api/auth/forgot-password").send({ email });
-const reset = (token, password) => request(app).post("/api/auth/reset-password").send({ token, password });
-const login = (email, password) => request(app).post("/api/auth/login").send({ email, password });
+const forgot = (email) => request(app).post("/api/v1/auth/forgot-password").send({ email });
+const reset = (token, password) => request(app).post("/api/v1/auth/reset-password").send({ token, password });
+const login = (email, password) => request(app).post("/api/v1/auth/login").send({ email, password });
 
 const resetEmailsTo = (email) =>
   sendEmail.mock.calls.map(([arg]) => arg).filter((m) => m.to === email && m.subject === "Password reset request");
@@ -83,8 +83,8 @@ describe("reset-password", () => {
 
     expect((await login(user.email, "old-password")).status).toBe(401);
     expect((await login(user.email, "new-password")).status).toBe(200);
-    expect((await request(app).get("/api/users/me").set("Authorization", `Bearer ${accessToken}`)).status).toBe(401);
-    expect((await request(app).post("/api/auth/refresh").send({ refreshToken })).status).toBe(401);
+    expect((await request(app).get("/api/v1/users/me").set("Authorization", `Bearer ${accessToken}`)).status).toBe(401);
+    expect((await request(app).post("/api/v1/auth/refresh").send({ refreshToken })).status).toBe(401);
   });
 
   test("a token can be used only once", async () => {

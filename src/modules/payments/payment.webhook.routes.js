@@ -7,14 +7,14 @@ const router = express.Router();
 
 /**
  * @swagger
- * /api/payments/webhook:
+ * /api/v1/payments/webhook:
  *   post:
  *     tags: [Payments]
  *     summary: Stripe webhook — verifies the signature before trusting any payment status (not client-reported)
  *     security: []
  *     responses:
- *       200: { description: Event processed }
- *       400: { description: Invalid signature }
+ *       200: { $ref: '#/components/responses/StripeWebhookAck' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  */
 // Mounted with express.raw() (see app.js) *before* the global express.json()
 // parser — Stripe's signature is computed over the exact raw request body,

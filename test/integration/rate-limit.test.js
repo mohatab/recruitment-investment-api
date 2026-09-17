@@ -9,7 +9,7 @@ const AUTH_LIMIT = 20;
 
 // Invalid body: rejected by validation before touching the DB, but still
 // counted by the limiter, which runs first.
-const attempt = (headers = {}) => request(app).post("/api/auth/login").set(headers).send({});
+const attempt = (headers = {}) => request(app).post("/api/v1/auth/login").set(headers).send({});
 
 describe("rate limiting", () => {
   test("auth endpoints return 429 with the standard error envelope past the limit", async () => {

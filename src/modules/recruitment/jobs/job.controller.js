@@ -1,6 +1,6 @@
 const jobService = require("./job.service");
 const asyncHandler = require("../../../common/utils/asyncHandler");
-const { ok, created, paginated } = require("../../../common/utils/response");
+const { ok, created, noContent, paginated } = require("../../../common/utils/response");
 
 const create = asyncHandler(async (req, res) => {
   const job = await jobService.create(req.user.id, req.body);
@@ -8,8 +8,8 @@ const create = asyncHandler(async (req, res) => {
 });
 
 const list = asyncHandler(async (req, res) => {
-  const { items, meta } = await jobService.list(req.query);
-  paginated(res, items, meta);
+  const { items, pagination } = await jobService.list(req.query);
+  paginated(res, items, pagination);
 });
 
 const getById = asyncHandler(async (req, res) => {
@@ -24,7 +24,7 @@ const update = asyncHandler(async (req, res) => {
 
 const remove = asyncHandler(async (req, res) => {
   await jobService.remove(req.params.id, req.user.id);
-  ok(res, null, "Job deleted");
+  noContent(res);
 });
 
 module.exports = { create, list, getById, update, remove };

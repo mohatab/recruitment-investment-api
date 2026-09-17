@@ -1,15 +1,15 @@
 const { app, request, registerUser, createAdmin } = require("../helpers");
 
-const me = (accessToken) => request(app).get("/api/users/me").set("Authorization", `Bearer ${accessToken}`);
-const refresh = (refreshToken) => request(app).post("/api/auth/refresh").send({ refreshToken });
-const login = (email, password) => request(app).post("/api/auth/login").send({ email, password });
+const me = (accessToken) => request(app).get("/api/v1/users/me").set("Authorization", `Bearer ${accessToken}`);
+const refresh = (refreshToken) => request(app).post("/api/v1/auth/refresh").send({ refreshToken });
+const login = (email, password) => request(app).post("/api/v1/auth/login").send({ email, password });
 const setStatus = (adminToken, id, body) =>
-  request(app).patch(`/api/users/${id}/status`).set("Authorization", `Bearer ${adminToken}`).send(body);
+  request(app).patch(`/api/v1/users/${id}/status`).set("Authorization", `Bearer ${adminToken}`).send(body);
 
 describe("user profile", () => {
   test("GET /api/users/me returns the current user without a password field", async () => {
     const { accessToken } = await registerUser();
-    const res = await request(app).get("/api/users/me").set("Authorization", `Bearer ${accessToken}`);
+    const res = await request(app).get("/api/v1/users/me").set("Authorization", `Bearer ${accessToken}`);
     expect(res.status).toBe(200);
     expect(res.body.data.password).toBeUndefined();
   });
@@ -17,7 +17,7 @@ describe("user profile", () => {
   test("PATCH /api/users/me updates allowed fields", async () => {
     const { accessToken } = await registerUser();
     const res = await request(app)
-      .patch("/api/users/me")
+      .patch("/api/v1/users/me")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({ phone: "+1234567890" });
     expect(res.status).toBe(200);
@@ -27,13 +27,13 @@ describe("user profile", () => {
   test("changing password requires the correct current password", async () => {
     const { accessToken } = await registerUser({ password: "original-pass" });
     const wrong = await request(app)
-      .post("/api/users/me/password")
+      .post("/api/v1/users/me/password")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({ currentPassword: "not-it", newPassword: "new-password-1" });
     expect(wrong.status).toBe(401);
 
     const right = await request(app)
-      .post("/api/users/me/password")
+      .post("/api/v1/users/me/password")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({ currentPassword: "original-pass", newPassword: "new-password-1" });
     expect(right.status).toBe(200);
@@ -44,7 +44,7 @@ describe("user profile", () => {
     const otherDevice = await login(user.email, "original-pass");
 
     const res = await request(app)
-      .post("/api/users/me/password")
+      .post("/api/v1/users/me/password")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({ currentPassword: "original-pass", newPassword: "new-password-1" });
     expect(res.status).toBe(200);
@@ -64,7 +64,7 @@ describe("user profile", () => {
     const { accessToken } = await registerUser({ password: "original-pass" });
     const change = (newPassword) =>
       request(app)
-        .post("/api/users/me/password")
+        .post("/api/v1/users/me/password")
         .set("Authorization", `Bearer ${accessToken}`)
         .send({ currentPassword: "original-pass", newPassword });
     expect((await change("short")).status).toBe(400);
@@ -75,7 +75,7 @@ describe("user profile", () => {
   test("GET /api/users/:id returns a limited profile, never another user's phone/email/birthdate", async () => {
     const { accessToken } = await registerUser();
     const other = await registerUser({ phone: "+10000000000" });
-    const res = await request(app).get(`/api/users/${other.user._id}`).set("Authorization", `Bearer ${accessToken}`);
+    const res = await request(app).get(`/api/v1/users/${other.user._id}`).set("Authorization", `Bearer ${accessToken}`);
     expect(res.status).toBe(200);
     expect(res.body.data._id).toBe(other.user._id);
     expect(res.body.data.firstName).toBe(other.user.firstName);
@@ -86,16 +86,16 @@ describe("user profile", () => {
 
   test("non-admin cannot list all users", async () => {
     const { accessToken } = await registerUser();
-    const res = await request(app).get("/api/users").set("Authorization", `Bearer ${accessToken}`);
+    const res = await request(app).get("/api/v1/users").set("Authorization", `Bearer ${accessToken}`);
     expect(res.status).toBe(403);
   });
 
   test("an admin can list all users", async () => {
     await registerUser();
     const admin = await createAdmin();
-    const res = await request(app).get("/api/users").set("Authorization", `Bearer ${admin.accessToken}`);
+    const res = await request(app).get("/api/v1/users").set("Authorization", `Bearer ${admin.accessToken}`);
     expect(res.status).toBe(200);
-    expect(res.body.meta.total).toBeGreaterThanOrEqual(2); // the registered user + the admin itself
+    expect(res.body.pagination.total).toBeGreaterThanOrEqual(2); // the registered user + the admin itself
   });
 
   test("an admin can deactivate an account: its sessions die and login is refused; reactivation restores login", async () => {
@@ -119,7 +119,7 @@ describe("user profile", () => {
     const { user, accessToken } = await registerUser();
 
     expect((await setStatus(accessToken, admin.user._id, { isActive: false })).status).toBe(403);
-    expect((await setStatus(admin.accessToken, admin.user._id, { isActive: false })).status).toBe(400);
+    expect((await setStatus(admin.accessToken, admin.user._id, { isActive: false })).status).toBe(422); // business rule, not a malformed request
     expect((await setStatus(admin.accessToken, user._id, { isActive: "false" })).status).toBe(400);
     expect((await setStatus(admin.accessToken, "507f1f77bcf86cd799439011", { isActive: false })).status).toBe(404);
   });
@@ -128,7 +128,7 @@ describe("user profile", () => {
     const { accessToken } = await registerUser();
 
     const rejected = await request(app)
-      .post("/api/users/me/cv")
+      .post("/api/v1/users/me/cv")
       .set("Authorization", `Bearer ${accessToken}`)
       .attach("cv", Buffer.from("not a real executable, just wrong extension"), {
         filename: "resume.exe",
@@ -137,7 +137,7 @@ describe("user profile", () => {
     expect(rejected.status).toBe(400);
 
     const accepted = await request(app)
-      .post("/api/users/me/cv")
+      .post("/api/v1/users/me/cv")
       .set("Authorization", `Bearer ${accessToken}`)
       .attach("cv", Buffer.from("%PDF-1.4 minimal fake pdf content"), {
         filename: "resume.pdf",

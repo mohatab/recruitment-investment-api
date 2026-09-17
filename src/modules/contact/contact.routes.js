@@ -8,7 +8,7 @@ const router = express.Router();
 
 /**
  * @swagger
- * /api/contact:
+ * /api/v1/contact:
  *   post:
  *     tags: [Contact]
  *     summary: Submit the public contact form (optionally with a profile image)
@@ -29,8 +29,9 @@ const router = express.Router();
  *               city: { type: string }
  *               profileImage: { type: string, format: binary }
  *     responses:
- *       201: { description: Submitted }
+ *       201: { $ref: '#/components/responses/ContactResponse' }
  *       400: { $ref: '#/components/responses/ValidationError' }
+ *       413: { $ref: '#/components/responses/PayloadTooLarge' }
  */
 router.post("/", uploadImage.single("profileImage"), validate(schemas.create), controller.create);
 

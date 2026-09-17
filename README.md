@@ -120,28 +120,28 @@ Node.js / Express · MongoDB + Mongoose · Socket.IO · JWT + bcryptjs · Stripe
   and the token's session generation (`ver`) must match `User.tokenVersion`.
   Role is taken from the stored user, never from the request.
 - **Refresh tokens**: opaque, single use, stored as SHA-256 hashes, 7 days by
-  default. `POST /api/auth/refresh` consumes the token atomically, so concurrent
+  default. `POST /api/v1/auth/refresh` consumes the token atomically, so concurrent
   requests can't both succeed. **Replaying an already-rotated token revokes
   every session of that user** (reuse detection).
 - **Session revocation**: changing or resetting the password, admin
-  deactivation, `POST /api/auth/logout-all` and refresh-token reuse all increment
+  deactivation, `POST /api/v1/auth/logout-all` and refresh-token reuse all increment
   `User.tokenVersion`, which invalidates every outstanding access and refresh
-  token and disconnects the user's open sockets. `POST /api/auth/logout`
+  token and disconnects the user's open sockets. `POST /api/v1/auth/logout`
   revokes a single refresh token. Changing the password returns a fresh token
   pair for the caller.
 - **Passwords**: bcrypt; at least 8 characters and at most 72 bytes (bcrypt's
   input limit, rejected rather than silently truncated).
 - **Deactivated accounts** get `403 ACCOUNT_DISABLED` at login, but only after
   the correct password, so account status isn't disclosed to guessers. Admins
-  toggle status with `PATCH /api/users/:id/status`.
+  toggle status with `PATCH /api/v1/users/:id/status`.
 - **Email verification**: registration emails a link
   (`${APP_URL}/verify-email#token=…`, valid 24 h, single use). The client app
-  posts the token to `POST /api/auth/verify-email`. Unverified users can sign
+  posts the token to `POST /api/v1/auth/verify-email`. Unverified users can sign
   in and manage their profile, but posting jobs and starting investments
   returns `403 EMAIL_NOT_VERIFIED`. Without SMTP configured in local
   development, mark an account verified with
   `db.users.updateOne({ email: "you@example.com" }, { $set: { emailVerifiedAt: new Date() } })`.
-- **Password reset**: `POST /api/auth/forgot-password` returns immediately with
+- **Password reset**: `POST /api/v1/auth/forgot-password` returns immediately with
   the same body for any email; the lookup and email happen afterwards, so
   timing doesn't reveal registered addresses. The link
   (`${APP_URL}/reset-password#token=…`) is valid 1 hour and single use, a newer
@@ -165,51 +165,96 @@ route JSDoc annotations, so it can't describe an endpoint that doesn't
 exist). Every endpoint documents its auth requirement, request/response
 shape, and error responses.
 
+### Versioning
+
+Every application endpoint lives under **`/api/v1`**. The health probes
+(`/health`, `/health/ready`) sit outside the prefix on purpose: they are
+infrastructure endpoints for orchestrators, not part of the product API, and
+must not move when `v2` arrives.
+
 ### Response envelope
 
 ```json
 { "success": true, "data": {}, "message": "..." }
 ```
 
+List endpoints add `pagination`:
+
 ```json
-{ "success": false, "error": { "code": "VALIDATION_ERROR", "message": "..." } }
+{ "success": true, "data": [], "pagination": { "page": 1, "limit": 20, "total": 42, "totalPages": 3 }, "message": "OK" }
 ```
 
-List endpoints add a `meta` block: `{ "page": 1, "limit": 20, "total": 42, "totalPages": 3 }`.
+Errors always carry a stable code and the request id (also sent as the
+`X-Request-Id` header):
+
+```json
+{
+  "success": false,
+  "error": { "code": "VALIDATION_ERROR", "message": "...", "details": [{ "field": "email", "message": "..." }] },
+  "requestId": "0b2ef09f-90cd-4ac6-bd52-1dbd4a2f0b2f"
+}
+```
+
+`204` responses (deletes) have no body, and the Stripe webhook answers in
+Stripe's own format rather than this envelope.
+
+### Status codes
+
+| Code            | Meaning                                                                                                                                                                                                                            |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 200 / 201 / 204 | OK · created (including the first `PUT` to a singleton profile) · deleted, no body                                                                                                                                                 |
+| 400             | Malformed request: schema violation (`VALIDATION_ERROR` with `details`), `INVALID_JSON`, `INVALID_ID`, `INVALID_TOKEN`                                                                                                             |
+| 401             | No valid session (`UNAUTHORIZED`)                                                                                                                                                                                                  |
+| 403             | Authenticated but not allowed (`FORBIDDEN`, `EMAIL_NOT_VERIFIED`, `ACCOUNT_DISABLED`)                                                                                                                                              |
+| 404             | Unknown route or resource                                                                                                                                                                                                          |
+| 409             | Duplicate (`CONFLICT`, `DUPLICATE_KEY`)                                                                                                                                                                                            |
+| 413             | Body over 1mb, or an upload over 5MB                                                                                                                                                                                               |
+| 422             | Well-formed, but a business rule refuses it: `JOB_CLOSED`, `INVALID_STATUS_TRANSITION`, `MINIMUM_INVESTMENT_NOT_MET`, `INVESTMENT_NOT_REFUNDABLE`, `RESUME_REQUIRED`, `SELF_MESSAGE_NOT_ALLOWED`, `SELF_STATUS_CHANGE_NOT_ALLOWED` |
+| 429             | Rate limited (`TOO_MANY_REQUESTS`)                                                                                                                                                                                                 |
+| 500 / 503       | Unexpected failure · readiness probe when MongoDB is unreachable                                                                                                                                                                   |
+
+### Pagination, filtering and sorting
+
+List endpoints accept `page` (default 1), `limit` (default 20, max 100) and
+`sort` — a comma-separated list from that endpoint's allowlist, `-` for
+descending (e.g. `?sort=-minSalary`). A field outside the allowlist is a
+`400`, so `sort` can never reach the database as an arbitrary field name.
+Domain filters (`search`, `role`, `status`, `stage`, …) are documented per
+endpoint in Swagger.
 
 ### Key flows
 
 **Register → apply to a job**
 
 ```
-POST /api/auth/register  { firstName, lastName, email, password, role: "candidate" }
-POST /api/users/me/cv    multipart/form-data, field "cv"
-POST /api/jobs/:jobId/applications  { coverLetter }   # uses the on-file CV if resumeUrl is omitted
+POST /api/v1/auth/register  { firstName, lastName, email, password, role: "candidate" }
+POST /api/v1/users/me/cv    multipart/form-data, field "cv"
+POST /api/v1/jobs/:jobId/applications  { coverLetter }   # uses the on-file CV if resumeUrl is omitted
 ```
 
 **Recruiter reviews an application**
 
 ```
-GET   /api/jobs/:jobId/applications          # owning recruiter only
-PATCH /api/applications/:id/status  { "status": "under_review" }
+GET   /api/v1/jobs/:jobId/applications          # owning recruiter only
+PATCH /api/v1/applications/:id/status  { "status": "under_review" }
 ```
 
 Valid transitions: `submitted → under_review → shortlisted → interview →
 accepted`, with `rejected` reachable from any non-terminal state. Skipping a
-step (e.g. `submitted → accepted`) is rejected with `400`.
+step (e.g. `submitted → accepted`) is rejected with `422 INVALID_STATUS_TRANSITION`.
 
 **Investor invests in a startup**
 
 ```
-PUT  /api/investors/me  { criteria: { minInvestment, maxInvestment, industries, stages } }
-GET  /api/startups/matches                       # startups matching saved criteria
-POST /api/investments  { startupId, amount }     # -> { investment, clientSecret }
+PUT  /api/v1/investors/me  { criteria: { minInvestment, maxInvestment, industries, stages } }
+GET  /api/v1/startups/matches                       # startups matching saved criteria
+POST /api/v1/investments  { startupId, amount }     # -> { investment, clientSecret }
 ```
 
 The client confirms payment with Stripe.js using `clientSecret`. The
 investment is only marked `paid` — and the startup's `raisedSoFar`
 incremented — when Stripe's **signed** webhook confirms it
-(`POST /api/payments/webhook`), never from a client-reported "success".
+(`POST /api/v1/payments/webhook`), never from a client-reported "success".
 
 ### Example requests
 
@@ -217,12 +262,12 @@ incremented — when Stripe's **signed** webhook confirms it
 <summary>Register + login</summary>
 
 ```bash
-curl -X POST http://localhost:3000/api/auth/register \
+curl -X POST http://localhost:3000/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{"firstName":"Jane","lastName":"Doe","email":"jane@example.com","password":"S3cure!Pass","role":"candidate"}'
 # 201 { "success": true, "data": { "user": {...}, "accessToken": "...", "refreshToken": "..." } }
 
-curl -X POST http://localhost:3000/api/auth/login \
+curl -X POST http://localhost:3000/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"jane@example.com","password":"S3cure!Pass"}'
 # 200 { "success": true, "data": { "user": {...}, "accessToken": "...", "refreshToken": "..." } }
@@ -234,12 +279,12 @@ curl -X POST http://localhost:3000/api/auth/login \
 <summary>Authenticated request, create + list a job</summary>
 
 ```bash
-curl -X POST http://localhost:3000/api/jobs \
+curl -X POST http://localhost:3000/api/v1/jobs \
   -H "Authorization: Bearer $RECRUITER_TOKEN" -H "Content-Type: application/json" \
   -d '{"title":"Backend Engineer","role":"Engineer","description":"...","responsibilities":"...","minSalary":60000,"maxSalary":90000,"salaryType":"yearly","expirationDate":"2027-01-01T00:00:00.000Z"}'
 # 201 { "success": true, "data": { "_id": "...", "title": "Backend Engineer", ... } }
 
-curl http://localhost:3000/api/jobs?role=engineer&page=1&limit=20
+curl http://localhost:3000/api/v1/jobs?role=engineer&page=1&limit=20
 # 200 { "success": true, "data": [ ... ], "meta": { "page": 1, "limit": 20, "total": 1, "totalPages": 1 } }
 ```
 
@@ -249,7 +294,7 @@ curl http://localhost:3000/api/jobs?role=engineer&page=1&limit=20
 <summary>Apply to a job</summary>
 
 ```bash
-curl -X POST http://localhost:3000/api/jobs/<jobId>/applications \
+curl -X POST http://localhost:3000/api/v1/jobs/<jobId>/applications \
   -H "Authorization: Bearer $CANDIDATE_TOKEN" -H "Content-Type: application/json" \
   -d '{"coverLetter":"I would be a great fit for this role because..."}'
 # 201 { "success": true, "data": { "status": "submitted", ... } }
@@ -263,15 +308,15 @@ curl -X POST http://localhost:3000/api/jobs/<jobId>/applications \
 
 ```bash
 # missing/invalid token
-curl http://localhost:3000/api/users/me
+curl http://localhost:3000/api/v1/users/me
 # 401 { "success": false, "error": { "code": "UNAUTHORIZED", "message": "Authentication token not provided" } }
 
 # authenticated, but wrong role (candidate trying to post a job)
-curl -X POST http://localhost:3000/api/jobs -H "Authorization: Bearer $CANDIDATE_TOKEN" -d '{}'
+curl -X POST http://localhost:3000/api/v1/jobs -H "Authorization: Bearer $CANDIDATE_TOKEN" -d '{}'
 # 403 { "success": false, "error": { "code": "FORBIDDEN", "message": "This action requires one of these roles: recruiter" } }
 
 # invalid input
-curl -X POST http://localhost:3000/api/auth/register -H "Content-Type: application/json" -d '{}'
+curl -X POST http://localhost:3000/api/v1/auth/register -H "Content-Type: application/json" -d '{}'
 # 400 { "success": false, "error": { "code": "VALIDATION_ERROR", "message": "\"firstName\" is required; ..." } }
 ```
 

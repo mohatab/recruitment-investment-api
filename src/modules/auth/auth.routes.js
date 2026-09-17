@@ -10,7 +10,7 @@ router.use(authLimiter);
 
 /**
  * @swagger
- * /api/auth/register:
+ * /api/v1/auth/register:
  *   post:
  *     tags: [Auth]
  *     summary: Register a new account (sends an email-verification link)
@@ -21,16 +21,16 @@ router.use(authLimiter);
  *         application/json:
  *           schema: { $ref: '#/components/schemas/RegisterInput' }
  *     responses:
- *       201: { description: Registered, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
+ *       201: { $ref: '#/components/responses/AuthSessionResponse' }
  *       400: { $ref: '#/components/responses/ValidationError' }
- *       409: { description: Email already registered }
+ *       409: { $ref: '#/components/responses/Conflict' }
  *       429: { $ref: '#/components/responses/TooManyRequests' }
  */
 router.post("/register", validate(schemas.register), controller.register);
 
 /**
  * @swagger
- * /api/auth/login:
+ * /api/v1/auth/login:
  *   post:
  *     tags: [Auth]
  *     summary: Log in with email and password
@@ -41,16 +41,16 @@ router.post("/register", validate(schemas.register), controller.register);
  *         application/json:
  *           schema: { $ref: '#/components/schemas/LoginInput' }
  *     responses:
- *       200: { description: Logged in, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
- *       401: { description: Invalid email or password (same response whether or not the email exists) }
- *       403: { description: ACCOUNT_DISABLED — correct credentials, but the account was deactivated }
+ *       200: { $ref: '#/components/responses/AuthSessionResponse' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
  *       429: { $ref: '#/components/responses/TooManyRequests' }
  */
 router.post("/login", validate(schemas.login), controller.login);
 
 /**
  * @swagger
- * /api/auth/refresh:
+ * /api/v1/auth/refresh:
  *   post:
  *     tags: [Auth]
  *     summary: Exchange a refresh token for a new pair. The presented token is consumed; presenting an already-rotated token revokes every session of the user (reuse detection).
@@ -61,16 +61,16 @@ router.post("/login", validate(schemas.login), controller.login);
  *         application/json:
  *           schema: { type: object, required: [refreshToken], properties: { refreshToken: { type: string } } }
  *     responses:
- *       200: { description: New token pair issued, content: { application/json: { schema: { $ref: '#/components/schemas/TokenPairResponse' } } } }
+ *       200: { $ref: '#/components/responses/TokenPairResponse' }
  *       400: { $ref: '#/components/responses/ValidationError' }
- *       401: { description: Invalid, expired, revoked or reused refresh token }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  *       429: { $ref: '#/components/responses/TooManyRequests' }
  */
 router.post("/refresh", validate(schemas.refresh), controller.refresh);
 
 /**
  * @swagger
- * /api/auth/logout:
+ * /api/v1/auth/logout:
  *   post:
  *     tags: [Auth]
  *     summary: Revoke one refresh token (this device). Outstanding access tokens expire on their own (15 min by default).
@@ -81,7 +81,7 @@ router.post("/refresh", validate(schemas.refresh), controller.refresh);
  *         application/json:
  *           schema: { type: object, required: [refreshToken], properties: { refreshToken: { type: string } } }
  *     responses:
- *       200: { description: Logged out (also for unknown or already-revoked tokens) }
+ *       200: { $ref: '#/components/responses/EmptyResponse' }
  *       400: { $ref: '#/components/responses/ValidationError' }
  *       429: { $ref: '#/components/responses/TooManyRequests' }
  */
@@ -89,13 +89,13 @@ router.post("/logout", validate(schemas.refresh), controller.logout);
 
 /**
  * @swagger
- * /api/auth/logout-all:
+ * /api/v1/auth/logout-all:
  *   post:
  *     tags: [Auth]
  *     summary: Revoke every session of the current user (all access and refresh tokens, open sockets)
  *     security: [{ BearerAuth: [] }]
  *     responses:
- *       200: { description: All sessions revoked }
+ *       200: { $ref: '#/components/responses/EmptyResponse' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       429: { $ref: '#/components/responses/TooManyRequests' }
  */
@@ -103,7 +103,7 @@ router.post("/logout-all", authenticate, controller.logoutAll);
 
 /**
  * @swagger
- * /api/auth/forgot-password:
+ * /api/v1/auth/forgot-password:
  *   post:
  *     tags: [Auth]
  *     summary: Request a password-reset email. Always 200 with the same body; the lookup and email happen after the response, so timing doesn't reveal whether the email is registered. At most one email per account per minute.
@@ -114,7 +114,7 @@ router.post("/logout-all", authenticate, controller.logoutAll);
  *         application/json:
  *           schema: { type: object, required: [email], properties: { email: { type: string, format: email } } }
  *     responses:
- *       200: { description: Accepted }
+ *       200: { $ref: '#/components/responses/EmptyResponse' }
  *       400: { $ref: '#/components/responses/ValidationError' }
  *       429: { $ref: '#/components/responses/TooManyRequests' }
  */
@@ -122,7 +122,7 @@ router.post("/forgot-password", validate(schemas.forgotPassword), controller.for
 
 /**
  * @swagger
- * /api/auth/reset-password:
+ * /api/v1/auth/reset-password:
  *   post:
  *     tags: [Auth]
  *     summary: Set a new password with the single-use token from the reset email (link format `${APP_URL}/reset-password#token=...`, valid 1 hour). Revokes all existing sessions.
@@ -133,15 +133,15 @@ router.post("/forgot-password", validate(schemas.forgotPassword), controller.for
  *         application/json:
  *           schema: { type: object, required: [token, password], properties: { token: { type: string }, password: { type: string, minLength: 8 } } }
  *     responses:
- *       200: { description: Password reset }
- *       400: { description: VALIDATION_ERROR, or INVALID_TOKEN (unknown, expired or already used) }
+ *       200: { $ref: '#/components/responses/EmptyResponse' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  *       429: { $ref: '#/components/responses/TooManyRequests' }
  */
 router.post("/reset-password", validate(schemas.resetPassword), controller.resetPassword);
 
 /**
  * @swagger
- * /api/auth/verify-email:
+ * /api/v1/auth/verify-email:
  *   post:
  *     tags: [Auth]
  *     summary: Confirm an email address with the single-use token from the verification email (link format `${APP_URL}/verify-email#token=...`, valid 24 hours)
@@ -152,21 +152,21 @@ router.post("/reset-password", validate(schemas.resetPassword), controller.reset
  *         application/json:
  *           schema: { type: object, required: [token], properties: { token: { type: string } } }
  *     responses:
- *       200: { description: Email verified }
- *       400: { description: VALIDATION_ERROR, or INVALID_TOKEN (unknown, expired or already used) }
+ *       200: { $ref: '#/components/responses/EmptyResponse' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  *       429: { $ref: '#/components/responses/TooManyRequests' }
  */
 router.post("/verify-email", validate(schemas.verifyEmail), controller.verifyEmail);
 
 /**
  * @swagger
- * /api/auth/resend-verification:
+ * /api/v1/auth/resend-verification:
  *   post:
  *     tags: [Auth]
  *     summary: Send a new verification link (no-op if already verified; at most one per minute; supersedes earlier links)
  *     security: [{ BearerAuth: [] }]
  *     responses:
- *       200: { description: Accepted }
+ *       200: { $ref: '#/components/responses/EmptyResponse' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       429: { $ref: '#/components/responses/TooManyRequests' }
  */

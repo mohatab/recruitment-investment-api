@@ -9,7 +9,7 @@ describe("notifications", () => {
     await notificationService.notifyUser(userA.user._id, "hello A");
     await notificationService.notifyUser(userB.user._id, "hello B");
 
-    const resA = await request(app).get("/api/notifications").set("Authorization", `Bearer ${userA.accessToken}`);
+    const resA = await request(app).get("/api/v1/notifications").set("Authorization", `Bearer ${userA.accessToken}`);
     expect(resA.status).toBe(200);
     expect(resA.body.data.every((n) => n.message !== "hello B")).toBe(true);
   });
@@ -20,7 +20,7 @@ describe("notifications", () => {
     const notification = await notificationService.notifyUser(owner.user._id, "private");
 
     const res = await request(app)
-      .patch(`/api/notifications/${notification._id}/read`)
+      .patch(`/api/v1/notifications/${notification._id}/read`)
       .set("Authorization", `Bearer ${intruder.accessToken}`);
     expect(res.status).toBe(403);
   });
@@ -30,7 +30,7 @@ describe("notifications", () => {
     const notification = await notificationService.notifyUser(owner.user._id, "hi");
 
     const res = await request(app)
-      .patch(`/api/notifications/${notification._id}/read`)
+      .patch(`/api/v1/notifications/${notification._id}/read`)
       .set("Authorization", `Bearer ${owner.accessToken}`);
     expect(res.status).toBe(200);
     expect(res.body.data.read).toBe(true);
@@ -39,7 +39,7 @@ describe("notifications", () => {
   test("non-admin cannot broadcast a notification", async () => {
     const { accessToken } = await registerUser({ role: "candidate" });
     const res = await request(app)
-      .post("/api/notifications/broadcast")
+      .post("/api/v1/notifications/broadcast")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({ message: "spam", targetRole: "candidate" });
     expect(res.status).toBe(403);
@@ -51,18 +51,18 @@ describe("notifications", () => {
     const investor = await registerUser({ role: "investor" });
 
     const broadcastRes = await request(app)
-      .post("/api/notifications/broadcast")
+      .post("/api/v1/notifications/broadcast")
       .set("Authorization", `Bearer ${admin.accessToken}`)
       .send({ message: "candidates: new feature", targetRole: "candidate" });
-    expect(broadcastRes.status).toBe(200);
+    expect(broadcastRes.status).toBe(201);
 
     const candidateInbox = await request(app)
-      .get("/api/notifications")
+      .get("/api/v1/notifications")
       .set("Authorization", `Bearer ${candidate.accessToken}`);
     expect(candidateInbox.body.data.some((n) => n.message === "candidates: new feature")).toBe(true);
 
     const investorInbox = await request(app)
-      .get("/api/notifications")
+      .get("/api/v1/notifications")
       .set("Authorization", `Bearer ${investor.accessToken}`);
     expect(investorInbox.body.data.some((n) => n.message === "candidates: new feature")).toBe(false);
   });
@@ -71,14 +71,14 @@ describe("notifications", () => {
   // authenticated user (any role) could flip it for the whole audience.
   describe("role broadcasts", () => {
     const inbox = async (who) =>
-      (await request(app).get("/api/notifications").set("Authorization", `Bearer ${who.accessToken}`)).body.data;
+      (await request(app).get("/api/v1/notifications").set("Authorization", `Bearer ${who.accessToken}`)).body.data;
     const markRead = (who, id) =>
-      request(app).patch(`/api/notifications/${id}/read`).set("Authorization", `Bearer ${who.accessToken}`);
+      request(app).patch(`/api/v1/notifications/${id}/read`).set("Authorization", `Bearer ${who.accessToken}`);
 
     async function broadcastToCandidates() {
       const admin = await createAdmin();
       const res = await request(app)
-        .post("/api/notifications/broadcast")
+        .post("/api/v1/notifications/broadcast")
         .set("Authorization", `Bearer ${admin.accessToken}`)
         .send({ message: "candidates only", targetRole: "candidate" });
       return res.body.data;
@@ -138,7 +138,7 @@ describe("notifications", () => {
   test("broadcast requires exactly one of userId or targetRole", async () => {
     const admin = await createAdmin();
     const res = await request(app)
-      .post("/api/notifications/broadcast")
+      .post("/api/v1/notifications/broadcast")
       .set("Authorization", `Bearer ${admin.accessToken}`)
       .send({ message: "ambiguous" });
     expect(res.status).toBe(400);

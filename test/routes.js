@@ -5,18 +5,18 @@ const app = require("../src/app");
 
 const MOUNTS = [
   ["", "../src/modules/health/health.routes"],
-  ["/api/auth", "../src/modules/auth/auth.routes"],
-  ["/api/users", "../src/modules/users/user.routes"],
-  ["/api/jobs", "../src/modules/recruitment/jobs/job.routes"],
-  ["/api/applications", "../src/modules/recruitment/applications/applications.top.routes"],
-  ["/api/startups", "../src/modules/investment/startups/startup.routes"],
-  ["/api/investors", "../src/modules/investment/investors/investor.routes"],
-  ["/api/investments", "../src/modules/investment/investments/investment.routes"],
-  ["/api/payments", "../src/modules/payments/payment.webhook.routes"],
-  ["/api/notifications", "../src/modules/notifications/notification.routes"],
-  ["/api/messages", "../src/modules/messaging/message.routes"],
-  ["/api/experiences", "../src/modules/experience/experience.routes"],
-  ["/api/contact", "../src/modules/contact/contact.routes"],
+  ["/api/v1/auth", "../src/modules/auth/auth.routes"],
+  ["/api/v1/users", "../src/modules/users/user.routes"],
+  ["/api/v1/jobs", "../src/modules/recruitment/jobs/job.routes"],
+  ["/api/v1/applications", "../src/modules/recruitment/applications/applications.top.routes"],
+  ["/api/v1/startups", "../src/modules/investment/startups/startup.routes"],
+  ["/api/v1/investors", "../src/modules/investment/investors/investor.routes"],
+  ["/api/v1/investments", "../src/modules/investment/investments/investment.routes"],
+  ["/api/v1/payments", "../src/modules/payments/payment.webhook.routes"],
+  ["/api/v1/notifications", "../src/modules/notifications/notification.routes"],
+  ["/api/v1/messages", "../src/modules/messaging/message.routes"],
+  ["/api/v1/experiences", "../src/modules/experience/experience.routes"],
+  ["/api/v1/contact", "../src/modules/contact/contact.routes"],
 ].map(([prefix, file]) => [prefix, require(file)]);
 
 // Express 4 keeps no path string for router.use() mounts, so nested routers

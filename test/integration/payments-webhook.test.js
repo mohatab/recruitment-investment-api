@@ -19,16 +19,16 @@ const Startup = require("../../src/modules/investment/startups/startup.model");
 async function setupInvestment(amount = 200) {
   const startupOwner = await registerUser({ role: "startup" });
   await request(app)
-    .put("/api/startups/me")
+    .put("/api/v1/startups/me")
     .set("Authorization", `Bearer ${startupOwner.accessToken}`)
     .send({ name: "Acme", description: "desc", totalRaising: 10000, minInvestment: 100 });
   const startupId = (
-    await request(app).get("/api/startups/me").set("Authorization", `Bearer ${startupOwner.accessToken}`)
+    await request(app).get("/api/v1/startups/me").set("Authorization", `Bearer ${startupOwner.accessToken}`)
   ).body.data._id;
 
   const investor = await registerUser({ role: "investor" });
   const createRes = await request(app)
-    .post("/api/investments")
+    .post("/api/v1/investments")
     .set("Authorization", `Bearer ${investor.accessToken}`)
     .send({ startupId, amount });
 
@@ -36,7 +36,7 @@ async function setupInvestment(amount = 200) {
 }
 
 function sendWebhook(event, signature = "valid-test-signature") {
-  return request(app).post("/api/payments/webhook").set("stripe-signature", signature).send(event);
+  return request(app).post("/api/v1/payments/webhook").set("stripe-signature", signature).send(event);
 }
 
 describe("Stripe webhook", () => {
@@ -51,7 +51,7 @@ describe("Stripe webhook", () => {
   test("marks the investment paid and credits the startup on payment_intent.succeeded", async () => {
     const { startupId, investment } = await setupInvestment(200);
 
-    const before = await request(app).get(`/api/startups/${startupId}`);
+    const before = await request(app).get(`/api/v1/startups/${startupId}`);
     expect(before.body.data.raisedSoFar).toBe(0);
 
     const webhookRes = await sendWebhook({
@@ -60,7 +60,7 @@ describe("Stripe webhook", () => {
     });
     expect(webhookRes.status).toBe(200);
 
-    const after = await request(app).get(`/api/startups/${startupId}`);
+    const after = await request(app).get(`/api/v1/startups/${startupId}`);
     expect(after.body.data.raisedSoFar).toBe(200);
   });
 
@@ -71,7 +71,7 @@ describe("Stripe webhook", () => {
     await sendWebhook(event);
     await sendWebhook(event); // Stripe's own retry behavior can deliver a webhook more than once
 
-    const after = await request(app).get(`/api/startups/${startupId}`);
+    const after = await request(app).get(`/api/v1/startups/${startupId}`);
     expect(after.body.data.raisedSoFar).toBe(200); // not 400
   });
 
@@ -82,7 +82,9 @@ describe("Stripe webhook", () => {
       data: { object: { id: investment.stripePaymentIntentId } },
     });
 
-    const mine = await request(app).get("/api/investments/mine").set("Authorization", `Bearer ${investor.accessToken}`);
+    const mine = await request(app)
+      .get("/api/v1/investments/mine")
+      .set("Authorization", `Bearer ${investor.accessToken}`);
     expect(mine.body.data[0].status).toBe("failed");
   });
 
@@ -95,10 +97,10 @@ describe("Stripe webhook", () => {
     const { investment, investor, startupId, startupOwner } = await setupInvestment(200);
     const admin = await createAdmin();
     const refund = (token) =>
-      request(app).post(`/api/investments/${investment._id}/refund`).set("Authorization", `Bearer ${token}`);
+      request(app).post(`/api/v1/investments/${investment._id}/refund`).set("Authorization", `Bearer ${token}`);
 
     // still "pending" — never confirmed by a webhook
-    expect((await refund(admin.accessToken)).status).toBe(400);
+    expect((await refund(admin.accessToken)).status).toBe(422);
 
     await sendWebhook({ type: "payment_intent.succeeded", data: { object: { id: investment.stripePaymentIntentId } } });
 
@@ -118,7 +120,7 @@ describe("Stripe webhook", () => {
     const { startupOwner, investor } = await setupInvestment(200);
 
     const res = await request(app)
-      .get("/api/investments/startup")
+      .get("/api/v1/investments/startup")
       .set("Authorization", `Bearer ${startupOwner.accessToken}`);
     expect(res.status).toBe(200);
     expect(res.body.data.length).toBe(1);

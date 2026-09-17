@@ -1,6 +1,6 @@
 const rateLimit = require("express-rate-limit");
 const env = require("../../config/env");
-const { AppError } = require("../errors/AppError");
+const { AppError, CODES } = require("../errors/AppError");
 
 // Keyed on req.ip, which is only trustworthy because `trust proxy` comes from
 // TRUST_PROXY (default off) — see config/env.js.
@@ -14,7 +14,7 @@ function limiter({ limit, message }) {
     legacyHeaders: false,
     skip: () => !env.rateLimitEnabled,
     // Through the central error handler, so 429s get the standard envelope + requestId.
-    handler: (req, res, next) => next(new AppError(message, 429, "TOO_MANY_REQUESTS")),
+    handler: (req, res, next) => next(new AppError(message, 429, CODES.TOO_MANY_REQUESTS)),
   });
 }
 

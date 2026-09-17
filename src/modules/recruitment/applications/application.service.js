@@ -2,9 +2,11 @@ const Application = require("./application.model");
 const Job = require("../jobs/job.model");
 const User = require("../../users/user.model");
 const notificationService = require("../../notifications/notification.service");
-const { NotFoundError, ConflictError, ValidationError } = require("../../../common/errors/AppError");
+const { NotFoundError, ConflictError, UnprocessableEntityError, CODES } = require("../../../common/errors/AppError");
 const assertOwner = require("../../../common/utils/assertOwner");
-const { parsePagination, buildMeta } = require("../../../common/utils/pagination");
+const { parsePagination, buildPagination } = require("../../../common/utils/pagination");
+
+const SORTABLE = ["createdAt", "status"];
 
 // A candidate can only ever move an application forward by withdrawing
 // (not modeled here); every other transition is recruiter-driven. Terminal
@@ -21,10 +23,14 @@ const TRANSITIONS = {
 async function apply(jobId, applicantId, input) {
   const job = await Job.findById(jobId);
   if (!job) throw new NotFoundError("Job not found");
-  if (job.status !== "open") throw new ValidationError("This job is no longer accepting applications");
+  if (job.status !== "open") {
+    throw new UnprocessableEntityError("This job is no longer accepting applications", CODES.JOB_CLOSED);
+  }
 
   const resumeUrl = input.resumeUrl || (await User.findById(applicantId)).cvUrl;
-  if (!resumeUrl) throw new ValidationError("Upload a CV before applying, or provide a resumeUrl");
+  if (!resumeUrl) {
+    throw new UnprocessableEntityError("Upload a CV before applying, or provide a resumeUrl", CODES.RESUME_REQUIRED);
+  }
 
   try {
     const application = await Application.create({
@@ -46,7 +52,7 @@ async function listForJob(jobId, recruiterId, query) {
   if (!job) throw new NotFoundError("Job not found");
   assertOwner(job.recruiter, recruiterId, "You can only view applications for your own job postings");
 
-  const { page, limit, skip, sort } = parsePagination(query);
+  const { page, limit, skip, sort } = parsePagination(query, { allowedSort: SORTABLE });
   const filter = { job: jobId };
   if (query.status) filter.status = query.status;
 
@@ -54,18 +60,18 @@ async function listForJob(jobId, recruiterId, query) {
     Application.find(filter).sort(sort).skip(skip).limit(limit).populate("applicant", "firstName lastName email"),
     Application.countDocuments(filter),
   ]);
-  return { items, meta: buildMeta({ page, limit, total }) };
+  return { items, pagination: buildPagination({ page, limit, total }) };
 }
 
 async function listMine(applicantId, query) {
-  const { page, limit, skip, sort } = parsePagination(query);
+  const { page, limit, skip, sort } = parsePagination(query, { allowedSort: SORTABLE });
   const filter = { applicant: applicantId };
 
   const [items, total] = await Promise.all([
     Application.find(filter).sort(sort).skip(skip).limit(limit).populate("job", "title role status"),
     Application.countDocuments(filter),
   ]);
-  return { items, meta: buildMeta({ page, limit, total }) };
+  return { items, pagination: buildPagination({ page, limit, total }) };
 }
 
 async function updateStatus(applicationId, recruiterId, nextStatus) {
@@ -76,7 +82,10 @@ async function updateStatus(applicationId, recruiterId, nextStatus) {
 
   const allowed = TRANSITIONS[application.status] || [];
   if (!allowed.includes(nextStatus)) {
-    throw new ValidationError(`Cannot move an application from "${application.status}" to "${nextStatus}"`);
+    throw new UnprocessableEntityError(
+      `Cannot move an application from "${application.status}" to "${nextStatus}"`,
+      CODES.INVALID_STATUS_TRANSITION
+    );
   }
 
   application.status = nextStatus;
@@ -88,4 +97,4 @@ async function updateStatus(applicationId, recruiterId, nextStatus) {
   return application;
 }
 
-module.exports = { apply, listForJob, listMine, updateStatus, TRANSITIONS };
+module.exports = { apply, listForJob, listMine, updateStatus, TRANSITIONS, SORTABLE };

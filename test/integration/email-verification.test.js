@@ -7,10 +7,10 @@ const { sendEmail } = require("../../src/common/services/email.service");
 const AuthToken = require("../../src/modules/auth/authToken.model");
 const env = require("../../src/config/env");
 
-const verify = (token) => request(app).post("/api/auth/verify-email").send({ token });
-const me = (accessToken) => request(app).get("/api/users/me").set("Authorization", `Bearer ${accessToken}`);
+const verify = (token) => request(app).post("/api/v1/auth/verify-email").send({ token });
+const me = (accessToken) => request(app).get("/api/v1/users/me").set("Authorization", `Bearer ${accessToken}`);
 const resend = (accessToken) =>
-  request(app).post("/api/auth/resend-verification").set("Authorization", `Bearer ${accessToken}`);
+  request(app).post("/api/v1/auth/resend-verification").set("Authorization", `Bearer ${accessToken}`);
 
 const verificationEmails = (email) =>
   sendEmail.mock.calls.map(([m]) => m).filter((m) => m.to === email && m.subject === "Confirm your email address");
@@ -81,12 +81,12 @@ describe("email verification", () => {
   });
 
   test("resend requires authentication", async () => {
-    expect((await request(app).post("/api/auth/resend-verification")).status).toBe(401);
+    expect((await request(app).post("/api/v1/auth/resend-verification")).status).toBe(401);
   });
 
   test("an unverified recruiter cannot post a job until they verify (403 EMAIL_NOT_VERIFIED)", async () => {
     const { user, accessToken } = await registerUser({ role: "recruiter" }, { verified: false });
-    const post = () => request(app).post("/api/jobs").set("Authorization", `Bearer ${accessToken}`).send(JOB);
+    const post = () => request(app).post("/api/v1/jobs").set("Authorization", `Bearer ${accessToken}`).send(JOB);
 
     const blocked = await post();
     expect(blocked.status).toBe(403);
@@ -99,7 +99,7 @@ describe("email verification", () => {
   test("an unverified investor cannot start an investment", async () => {
     const { accessToken } = await registerUser({ role: "investor" }, { verified: false });
     const res = await request(app)
-      .post("/api/investments")
+      .post("/api/v1/investments")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({ startupId: "507f1f77bcf86cd799439011", amount: 100 });
     expect(res.body.error.code).toBe("EMAIL_NOT_VERIFIED");

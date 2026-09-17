@@ -24,15 +24,17 @@ const accessLog = async (requestId) => {
 describe("structured request logging", () => {
   test("logs one structured line per request with id, method, route, status and duration", async () => {
     const { user, accessToken } = await registerUser();
-    const res = await request(app).get("/api/users/me?secret=querytoken").set("Authorization", `Bearer ${accessToken}`);
+    const res = await request(app)
+      .get("/api/v1/users/me?secret=querytoken")
+      .set("Authorization", `Bearer ${accessToken}`);
 
     const entry = await accessLog(res.headers["x-request-id"]);
     expect(entry.level).toBe("info");
     expect(entry.timestamp).toEqual(expect.any(String));
     expect(entry.meta).toMatchObject({
       method: "GET",
-      path: "/api/users/me",
-      route: "/api/users/me",
+      path: "/api/v1/users/me",
+      route: "/api/v1/users/me",
       status: 200,
       userId: user._id,
     });
@@ -42,7 +44,7 @@ describe("structured request logging", () => {
 
   test("client errors are logged at warn with their error code, and never include the request body", async () => {
     const res = await request(app)
-      .post("/api/auth/login")
+      .post("/api/v1/auth/login")
       .send({ email: "who@example.com", password: "hunter2hunter2" });
 
     const entry = await accessLog(res.headers["x-request-id"]);
@@ -54,7 +56,7 @@ describe("structured request logging", () => {
   });
 
   test("4xx errors do not produce a separate error-level entry with a stack trace", async () => {
-    await request(app).get("/api/jobs/not-an-id");
+    await request(app).get("/api/v1/jobs/not-an-id");
     expect(lines.filter((l) => l.level === "error")).toEqual([]);
   });
 });

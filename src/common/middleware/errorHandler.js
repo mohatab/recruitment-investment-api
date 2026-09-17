@@ -1,17 +1,17 @@
-const { AppError } = require("../errors/AppError");
+const { AppError, CODES } = require("../errors/AppError");
 const logger = require("../utils/logger");
 const env = require("../../config/env");
 
 // body-parser/raw-body failures are client errors (they carry `expose: true`
 // and a 4xx `status`); without this map they fell through to a 500.
 const BODY_PARSER_CODES = {
-  "entity.parse.failed": { code: "INVALID_JSON", message: "Request body is not valid JSON" },
-  "entity.too.large": { code: "PAYLOAD_TOO_LARGE", message: "Request body is too large" },
-  "entity.verify.failed": { code: "BAD_REQUEST", message: "Request body could not be verified" },
-  "request.aborted": { code: "BAD_REQUEST", message: "Request was aborted" },
-  "request.size.invalid": { code: "BAD_REQUEST", message: "Request size did not match Content-Length" },
-  "charset.unsupported": { code: "UNSUPPORTED_MEDIA_TYPE", message: "Unsupported request charset" },
-  "encoding.unsupported": { code: "UNSUPPORTED_MEDIA_TYPE", message: "Unsupported content encoding" },
+  "entity.parse.failed": { code: CODES.INVALID_JSON, message: "Request body is not valid JSON" },
+  "entity.too.large": { code: CODES.PAYLOAD_TOO_LARGE, message: "Request body is too large" },
+  "entity.verify.failed": { code: CODES.BAD_REQUEST, message: "Request body could not be verified" },
+  "request.aborted": { code: CODES.BAD_REQUEST, message: "Request was aborted" },
+  "request.size.invalid": { code: CODES.BAD_REQUEST, message: "Request size did not match Content-Length" },
+  "charset.unsupported": { code: CODES.UNSUPPORTED_MEDIA_TYPE, message: "Unsupported request charset" },
+  "encoding.unsupported": { code: CODES.UNSUPPORTED_MEDIA_TYPE, message: "Unsupported content encoding" },
 };
 
 function sendError(req, res, statusCode, error) {
@@ -20,7 +20,7 @@ function sendError(req, res, statusCode, error) {
 }
 
 function notFound(req, res) {
-  sendError(req, res, 404, { code: "NOT_FOUND", message: `Route not found: ${req.method} ${req.path}` });
+  sendError(req, res, 404, { code: CODES.NOT_FOUND, message: `Route not found: ${req.method} ${req.path}` });
 }
 
 // Translates known Mongoose/Multer/body-parser failure shapes into the same
@@ -36,23 +36,29 @@ function normalize(err) {
     const message = Object.values(err.errors)
       .map((e) => e.message)
       .join("; ");
-    return { statusCode: 400, code: "VALIDATION_ERROR", message };
+    return { statusCode: 400, code: CODES.VALIDATION_ERROR, message };
   }
 
   if (err.name === "CastError") {
-    return { statusCode: 400, code: "INVALID_ID", message: `Invalid ${err.path}` };
+    return { statusCode: 400, code: CODES.INVALID_ID, message: `Invalid ${err.path}` };
   }
 
   if (err.code === 11000) {
     const field = Object.keys(err.keyValue || {})[0] || "field";
-    return { statusCode: 409, code: "DUPLICATE_KEY", message: `${field} already in use` };
+    return { statusCode: 409, code: CODES.DUPLICATE_KEY, message: `${field} already in use` };
   }
 
   if (err.name === "MulterError") {
-    return { statusCode: 400, code: "UPLOAD_ERROR", message: err.message };
+    // A file over the limit is the multipart equivalent of a too-large body.
+    const tooLarge = err.code === "LIMIT_FILE_SIZE";
+    return {
+      statusCode: tooLarge ? 413 : 400,
+      code: tooLarge ? CODES.PAYLOAD_TOO_LARGE : CODES.UPLOAD_ERROR,
+      message: err.message,
+    };
   }
 
-  return { statusCode: 500, code: "INTERNAL_ERROR", message: "Something went wrong" };
+  return { statusCode: 500, code: CODES.INTERNAL_ERROR, message: "Something went wrong" };
 }
 
 // Express identifies error-handling middleware by arity (4 params) — `next`

@@ -1,4 +1,6 @@
 const Joi = require("joi");
+const { listQuery } = require("../../common/utils/pagination");
+const { SORTABLE } = require("./experience.service");
 
 const create = Joi.object({
   jobTitle: Joi.string().required(),
@@ -10,4 +12,6 @@ const create = Joi.object({
   endDate: Joi.date().iso().when("currentlyWorking", { is: false, then: Joi.required() }),
 });
 
-module.exports = { create };
+const list = listQuery(SORTABLE);
+
+module.exports = { create, list };

@@ -2,7 +2,7 @@ const { app, request } = require("../helpers");
 
 describe("public contact form", () => {
   test("submits successfully without an image (no authentication required)", async () => {
-    const res = await request(app).post("/api/contact").send({
+    const res = await request(app).post("/api/v1/contact").send({
       firstName: "Jane",
       lastName: "Doe",
       email: "jane@example.com",
@@ -13,13 +13,13 @@ describe("public contact form", () => {
   });
 
   test("rejects a submission missing required fields", async () => {
-    const res = await request(app).post("/api/contact").send({ firstName: "Jane" });
+    const res = await request(app).post("/api/v1/contact").send({ firstName: "Jane" });
     expect(res.status).toBe(400);
   });
 
   test("accepts an optional profile image and rejects a disallowed file type", async () => {
     const withImage = await request(app)
-      .post("/api/contact")
+      .post("/api/v1/contact")
       .field("firstName", "Jane")
       .field("lastName", "Doe")
       .field("email", "jane2@example.com")
@@ -29,7 +29,7 @@ describe("public contact form", () => {
     expect(withImage.body.data.profileImageUrl).toMatch(/\/uploads\/contact-images\//);
 
     const badType = await request(app)
-      .post("/api/contact")
+      .post("/api/v1/contact")
       .field("firstName", "Jane")
       .field("lastName", "Doe")
       .field("email", "jane3@example.com")

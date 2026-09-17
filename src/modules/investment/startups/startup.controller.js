@@ -1,10 +1,11 @@
 const startupService = require("./startup.service");
 const asyncHandler = require("../../../common/utils/asyncHandler");
-const { ok, paginated } = require("../../../common/utils/response");
+const { ok, created, paginated } = require("../../../common/utils/response");
 
 const upsertMine = asyncHandler(async (req, res) => {
-  const startup = await startupService.upsertMine(req.user.id, req.body);
-  ok(res, startup, "Startup profile saved");
+  const { startup, created: isNew } = await startupService.upsertMine(req.user.id, req.body);
+  if (isNew) return created(res, startup, "Startup profile created");
+  ok(res, startup, "Startup profile updated");
 });
 
 const getMine = asyncHandler(async (req, res) => {
@@ -18,13 +19,13 @@ const getById = asyncHandler(async (req, res) => {
 });
 
 const list = asyncHandler(async (req, res) => {
-  const { items, meta } = await startupService.list(req.query);
-  paginated(res, items, meta);
+  const { items, pagination } = await startupService.list(req.query);
+  paginated(res, items, pagination);
 });
 
 const matches = asyncHandler(async (req, res) => {
-  const startups = await startupService.matchesForInvestor(req.user.id);
-  ok(res, startups);
+  const { items, pagination } = await startupService.matchesForInvestor(req.user.id, req.query);
+  paginated(res, items, pagination);
 });
 
 const successAssessment = asyncHandler(async (req, res) => {

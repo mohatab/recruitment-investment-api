@@ -28,6 +28,11 @@ const healthRoutes = require("./modules/health/health.routes");
 
 const app = express();
 
+// Every application route lives under /api/v1. Health probes deliberately sit
+// outside it: they are infrastructure endpoints for orchestrators, not part of
+// the versioned product API, and must not move when v2 arrives.
+const API = "/api/v1";
+
 app.set("trust proxy", env.trustProxy); // default off — see TRUST_PROXY in config/env.js
 app.use(requestId);
 app.use(requestLogger);
@@ -44,7 +49,7 @@ app.use(healthRoutes);
 
 // Stripe webhook signatures are computed over the raw body, so this route
 // must get the unparsed body — it's mounted before express.json() runs.
-app.use("/api/payments", express.raw({ type: "application/json" }), paymentWebhookRoutes);
+app.use(`${API}/payments`, express.raw({ type: "application/json" }), paymentWebhookRoutes);
 
 app.use(express.json({ limit: "1mb" }));
 app.use(mongoSanitize()); // strips `$`/`.` keys from req.body/query/params — blocks NoSQL operator injection
@@ -53,17 +58,17 @@ app.use(apiLimiter);
 app.use("/uploads", express.static(localStorage.rootDir));
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-app.use("/api/auth", authRoutes);
-app.use("/api/users", userRoutes);
-app.use("/api/jobs", jobRoutes);
-app.use("/api/applications", applicationsTopRoutes);
-app.use("/api/startups", startupRoutes);
-app.use("/api/investors", investorRoutes);
-app.use("/api/investments", investmentRoutes);
-app.use("/api/notifications", notificationRoutes);
-app.use("/api/messages", messageRoutes);
-app.use("/api/experiences", experienceRoutes);
-app.use("/api/contact", contactRoutes);
+app.use(`${API}/auth`, authRoutes);
+app.use(`${API}/users`, userRoutes);
+app.use(`${API}/jobs`, jobRoutes);
+app.use(`${API}/applications`, applicationsTopRoutes);
+app.use(`${API}/startups`, startupRoutes);
+app.use(`${API}/investors`, investorRoutes);
+app.use(`${API}/investments`, investmentRoutes);
+app.use(`${API}/notifications`, notificationRoutes);
+app.use(`${API}/messages`, messageRoutes);
+app.use(`${API}/experiences`, experienceRoutes);
+app.use(`${API}/contact`, contactRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

@@ -97,14 +97,14 @@ Admin is **not** a superuser: admin can do only the operations listed below.
 
 - Handshake: the same session check as HTTP; deactivation, logout-all,
   password change/reset and token expiry disconnect open sockets.
-- `chat:message` calls the same service and schema as `POST /api/messages`
+- `chat:message` calls the same service and schema as `POST /api/v1/messages`
   (sender = session user, same recipient rules, same error codes in the ack).
 - Rooms are derived from the session only: `user_<id>` (personal delivery),
   `role_<role>` (admin role broadcasts, the same audience as
   `GET /notifications`). No event lets a client join a room.
 - Presence (online/offline) is sent only to users who share a conversation
   with the user — the same audience that sees `isOnline` in
-  `GET /api/messages/conversations`.
+  `GET /api/v1/messages/conversations`.
 
 ### How it's enforced by tests
 
@@ -153,7 +153,7 @@ Admin is **not** a superuser: admin can do only the operations listed below.
   (`credentials: true` is never set); a deployment that adds cookie auth
   must also set a real origin allowlist.
 - **Rate limiting** (`express-rate-limit`): 300/15min general, 20/15min on
-  `/api/auth/*` — the actual brute-force control. Disabled only under
+  `/api/v1/auth/*` — the actual brute-force control. Disabled only under
   `NODE_ENV=test` so the integration suite's own volume doesn't self-throttle
   (`common/middleware/rateLimiter.js`); verified active by
   `test/unit/rate-limiter.test.js`.

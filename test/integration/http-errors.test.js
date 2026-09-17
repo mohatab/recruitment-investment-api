@@ -2,14 +2,14 @@ const { app, request } = require("../helpers");
 
 describe("request parsing errors", () => {
   test("malformed JSON is a 400 INVALID_JSON, not a 500", async () => {
-    const res = await request(app).post("/api/auth/login").set("Content-Type", "application/json").send('{"email":');
+    const res = await request(app).post("/api/v1/auth/login").set("Content-Type", "application/json").send('{"email":');
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ success: false, error: { code: "INVALID_JSON" } });
   });
 
   test("a JSON body over the 1mb limit is a 413 PAYLOAD_TOO_LARGE, not a 500", async () => {
     const res = await request(app)
-      .post("/api/auth/login")
+      .post("/api/v1/auth/login")
       .send({ email: "a@b.co", password: "x".repeat(1024 * 1024 + 1) });
     expect(res.status).toBe(413);
     expect(res.body.error.code).toBe("PAYLOAD_TOO_LARGE");
@@ -17,7 +17,7 @@ describe("request parsing errors", () => {
 
   test("an oversized Stripe webhook body (raw parser) is also a 413", async () => {
     const res = await request(app)
-      .post("/api/payments/webhook")
+      .post("/api/v1/payments/webhook")
       .set("Content-Type", "application/json")
       .send(JSON.stringify({ pad: "x".repeat(200 * 1024) }));
     expect(res.status).toBe(413);

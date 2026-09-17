@@ -1,4 +1,5 @@
 const Joi = require("joi");
+const { listQuery } = require("../../common/utils/pagination");
 
 // Shared by POST /api/messages and the chat:message socket event.
 const send = Joi.object({
@@ -6,4 +7,6 @@ const send = Joi.object({
   body: Joi.string().trim().min(1).max(5000).required(),
 });
 
-module.exports = { send };
+const list = listQuery(["createdAt"]);
+
+module.exports = { send, list };

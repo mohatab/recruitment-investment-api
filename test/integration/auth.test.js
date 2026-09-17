@@ -3,9 +3,9 @@ const { app, request, registerUser } = require("../helpers");
 const User = require("../../src/modules/users/user.model");
 const RefreshToken = require("../../src/modules/auth/refreshToken.model");
 
-const me = (accessToken) => request(app).get("/api/users/me").set("Authorization", `Bearer ${accessToken}`);
-const refresh = (refreshToken) => request(app).post("/api/auth/refresh").send({ refreshToken });
-const login = (email, password) => request(app).post("/api/auth/login").send({ email, password });
+const me = (accessToken) => request(app).get("/api/v1/users/me").set("Authorization", `Bearer ${accessToken}`);
+const refresh = (refreshToken) => request(app).post("/api/v1/auth/refresh").send({ refreshToken });
+const login = (email, password) => request(app).post("/api/v1/auth/login").send({ email, password });
 
 describe("registration", () => {
   test("returns the user and a token pair; password and tokenVersion are never returned", async () => {
@@ -81,7 +81,7 @@ describe("login", () => {
 
 describe("access tokens", () => {
   test("protected route without a token returns 401", async () => {
-    expect((await request(app).get("/api/users/me")).status).toBe(401);
+    expect((await request(app).get("/api/v1/users/me")).status).toBe(401);
   });
 
   test("a deactivated user's existing access token stops working immediately", async () => {
@@ -94,7 +94,7 @@ describe("access tokens", () => {
   test("role is read from the stored user, not trusted from the token", async () => {
     const { user, accessToken } = await registerUser({ role: "recruiter" });
     await User.updateOne({ _id: user._id }, { role: "candidate" });
-    const res = await request(app).post("/api/jobs").set("Authorization", `Bearer ${accessToken}`).send({});
+    const res = await request(app).post("/api/v1/jobs").set("Authorization", `Bearer ${accessToken}`).send({});
     expect(res.status).toBe(403);
   });
 });
@@ -165,7 +165,7 @@ describe("refresh token rotation", () => {
   test("reusing a token that was revoked by logout (not rotation) does not revoke other sessions", async () => {
     const { user, refreshToken } = await registerUser();
     const otherDevice = await login(user.email, "password123");
-    await request(app).post("/api/auth/logout").send({ refreshToken }).expect(200);
+    await request(app).post("/api/v1/auth/logout").send({ refreshToken }).expect(200);
 
     expect((await refresh(refreshToken)).status).toBe(401);
     expect((await refresh(otherDevice.body.data.refreshToken)).status).toBe(200);
@@ -186,7 +186,7 @@ describe("logout", () => {
     const { user, refreshToken, accessToken } = await registerUser();
     const otherDevice = await login(user.email, "password123");
 
-    expect((await request(app).post("/api/auth/logout").send({ refreshToken })).status).toBe(200);
+    expect((await request(app).post("/api/v1/auth/logout").send({ refreshToken })).status).toBe(200);
     expect((await refresh(refreshToken)).status).toBe(401);
     expect((await refresh(otherDevice.body.data.refreshToken)).status).toBe(200);
     expect((await me(accessToken)).status).toBe(200); // access tokens are short-lived and expire on their own
@@ -194,14 +194,14 @@ describe("logout", () => {
 
   test("logging out with an unknown or already-revoked token still returns 200 (no oracle)", async () => {
     const unknown = crypto.randomBytes(40).toString("hex");
-    expect((await request(app).post("/api/auth/logout").send({ refreshToken: unknown })).status).toBe(200);
+    expect((await request(app).post("/api/v1/auth/logout").send({ refreshToken: unknown })).status).toBe(200);
   });
 
   test("logout-all revokes every access and refresh token of the user", async () => {
     const { user, refreshToken, accessToken } = await registerUser();
     const otherDevice = await login(user.email, "password123");
 
-    const res = await request(app).post("/api/auth/logout-all").set("Authorization", `Bearer ${accessToken}`);
+    const res = await request(app).post("/api/v1/auth/logout-all").set("Authorization", `Bearer ${accessToken}`);
     expect(res.status).toBe(200);
 
     expect((await me(accessToken)).status).toBe(401);
@@ -211,6 +211,6 @@ describe("logout", () => {
   });
 
   test("logout-all requires authentication", async () => {
-    expect((await request(app).post("/api/auth/logout-all")).status).toBe(401);
+    expect((await request(app).post("/api/v1/auth/logout-all")).status).toBe(401);
   });
 });

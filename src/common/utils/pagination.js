@@ -1,24 +1,50 @@
-// Shared list-endpoint helper: parses page/limit/sort query params once and
-// returns both the Mongoose options and a `meta` block for the response.
-function parsePagination(query) {
-  const page = Math.max(1, parseInt(query.page, 10) || 1);
-  const limit = Math.min(100, Math.max(1, parseInt(query.limit, 10) || 20));
-  const skip = (page - 1) * limit;
+const Joi = require("joi");
 
-  let sort = { createdAt: -1 };
+const DEFAULT_LIMIT = 20;
+const MAX_LIMIT = 100;
+
+// Shared list-endpoint helper. `allowedSort` is an allowlist: a client can only
+// sort by fields the endpoint declares (and that are indexed), so `sort` can
+// never reach MongoDB as an arbitrary — or operator-shaped — field name.
+function parsePagination(query = {}, { allowedSort = ["createdAt"], defaultSort = { createdAt: -1 } } = {}) {
+  const page = Math.max(1, parseInt(query.page, 10) || 1);
+  const limit = Math.min(MAX_LIMIT, Math.max(1, parseInt(query.limit, 10) || DEFAULT_LIMIT));
+
+  let sort = defaultSort;
   if (query.sort) {
     sort = {};
     for (const field of String(query.sort).split(",")) {
-      if (field.startsWith("-")) sort[field.slice(1)] = -1;
-      else sort[field] = 1;
+      const descending = field.startsWith("-");
+      const name = descending ? field.slice(1) : field;
+      if (!allowedSort.includes(name)) continue; // validated by listQuery() before reaching here
+      sort[name] = descending ? -1 : 1;
     }
+    if (!Object.keys(sort).length) sort = defaultSort;
   }
 
-  return { page, limit, skip, sort };
+  return { page, limit, skip: (page - 1) * limit, sort };
 }
 
-function buildMeta({ page, limit, total }) {
+function buildPagination({ page, limit, total }) {
   return { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) };
 }
 
-module.exports = { parsePagination, buildMeta };
+// Joi fragment for list endpoints: same page/limit/sort contract everywhere,
+// with the sort allowlist enforced at the edge (400 instead of a silent
+// fallback or a 500 from MongoDB).
+function listQuery(allowedSort = ["createdAt"], extra = {}) {
+  const sortable = allowedSort.flatMap((field) => [field, `-${field}`]);
+  return Joi.object({
+    page: Joi.number().integer().min(1).default(1),
+    limit: Joi.number().integer().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
+    sort: Joi.string()
+      .custom((value, helpers) => {
+        const fields = value.split(",").map((f) => f.trim());
+        return fields.every((f) => sortable.includes(f)) ? fields.join(",") : helpers.error("any.only");
+      })
+      .messages({ "any.only": `{{#label}} must be a comma-separated list of: ${sortable.join(", ")}` }),
+    ...extra,
+  });
+}
+
+module.exports = { parsePagination, buildPagination, listQuery, DEFAULT_LIMIT, MAX_LIMIT };

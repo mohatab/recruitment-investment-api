@@ -10,12 +10,15 @@ const router = express.Router();
 
 /**
  * @swagger
- * /api/jobs:
+ * /api/v1/jobs:
  *   get:
  *     tags: [Jobs]
  *     summary: Search/list open jobs
  *     security: []
  *     parameters:
+ *       - $ref: '#/components/parameters/Page'
+ *       - $ref: '#/components/parameters/Limit'
+ *       - $ref: '#/components/parameters/Sort'
  *       - in: query
  *         name: search
  *         schema: { type: string }
@@ -38,13 +41,13 @@ const router = express.Router();
  *         name: limit
  *         schema: { type: integer }
  *     responses:
- *       200: { description: OK }
+ *       200: { $ref: '#/components/responses/JobListResponse' }
  */
 router.get("/", validate(schemas.list, "query"), controller.list);
 
 /**
  * @swagger
- * /api/jobs/{id}:
+ * /api/v1/jobs/{id}:
  *   get:
  *     tags: [Jobs]
  *     summary: Get a job by id
@@ -55,14 +58,14 @@ router.get("/", validate(schemas.list, "query"), controller.list);
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: OK }
+ *       200: { $ref: '#/components/responses/JobResponse' }
  *       404: { $ref: '#/components/responses/NotFound' }
  */
 router.get("/:id", controller.getById);
 
 /**
  * @swagger
- * /api/jobs:
+ * /api/v1/jobs:
  *   post:
  *     tags: [Jobs]
  *     summary: Create a job posting (recruiters only)
@@ -73,10 +76,10 @@ router.get("/:id", controller.getById);
  *       required: true
  *       content: { application/json: { schema: { $ref: '#/components/schemas/JobInput' } } }
  *     responses:
- *       201: { description: Created }
+ *       201: { $ref: '#/components/responses/JobResponse' }
  *       400: { $ref: '#/components/responses/ValidationError' }
- *       403: { description: "FORBIDDEN (not a recruiter) or EMAIL_NOT_VERIFIED" }
  *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
  */
 router.post(
   "/",
@@ -89,7 +92,7 @@ router.post(
 
 /**
  * @swagger
- * /api/jobs/{id}:
+ * /api/v1/jobs/{id}:
  *   patch:
  *     tags: [Jobs]
  *     summary: Update a job posting (owning recruiter only)
@@ -101,16 +104,16 @@ router.post(
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: Updated }
+ *       200: { $ref: '#/components/responses/JobResponse' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  *       403: { $ref: '#/components/responses/Forbidden' }
  *       404: { $ref: '#/components/responses/NotFound' }
- *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.patch("/:id", authenticate, authorize(ROLES.RECRUITER), validate(schemas.update), controller.update);
 
 /**
  * @swagger
- * /api/jobs/{id}:
+ * /api/v1/jobs/{id}:
  *   delete:
  *     tags: [Jobs]
  *     summary: Delete a job posting (owning recruiter only)
@@ -122,13 +125,14 @@ router.patch("/:id", authenticate, authorize(ROLES.RECRUITER), validate(schemas.
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: Deleted }
- *       403: { $ref: '#/components/responses/Forbidden' }
+ *       204: { $ref: '#/components/responses/NoContent' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
+ *       404: { $ref: '#/components/responses/NotFound' }
  */
 router.delete("/:id", authenticate, authorize(ROLES.RECRUITER), controller.remove);
 
-// /api/jobs/:jobId/applications — mounted here since applications are always
+// /api/v1/jobs/:jobId/applications — mounted here since applications are always
 // scoped to a job in the URL; see application.routes.js for the handlers.
 router.use("/:jobId/applications", applicationRoutes);
 

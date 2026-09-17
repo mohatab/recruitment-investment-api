@@ -11,20 +11,20 @@ router.use(authenticate);
 
 /**
  * @swagger
- * /api/users/me:
+ * /api/v1/users/me:
  *   get:
  *     tags: [Users]
  *     summary: Get the current authenticated user's profile
  *     security: [{ BearerAuth: [] }]
  *     responses:
- *       200: { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+ *       200: { $ref: '#/components/responses/UserResponse' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.get("/me", controller.getMe);
 
 /**
  * @swagger
- * /api/users/me:
+ * /api/v1/users/me:
  *   patch:
  *     tags: [Users]
  *     summary: Update the current user's profile
@@ -32,7 +32,7 @@ router.get("/me", controller.getMe);
  *     requestBody:
  *       content: { application/json: { schema: { $ref: '#/components/schemas/UpdateProfileInput' } } }
  *     responses:
- *       200: { description: Updated }
+ *       200: { $ref: '#/components/responses/UserResponse' }
  *       400: { $ref: '#/components/responses/ValidationError' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  */
@@ -40,10 +40,10 @@ router.patch("/me", validate(schemas.updateProfile), controller.updateMe);
 
 /**
  * @swagger
- * /api/users/me/password:
+ * /api/v1/users/me/password:
  *   post:
  *     tags: [Users]
- *     summary: Change the current user's password
+ *     summary: Change the current user's password. Revokes every existing session (access and refresh tokens, open sockets); the returned pair replaces the caller's tokens. A wrong current password is a 401.
  *     security: [{ BearerAuth: [] }]
  *     requestBody:
  *       required: true
@@ -51,17 +51,15 @@ router.patch("/me", validate(schemas.updateProfile), controller.updateMe);
  *         application/json:
  *           schema: { type: object, required: [currentPassword, newPassword], properties: { currentPassword: { type: string }, newPassword: { type: string, minLength: 8, description: "8+ characters, at most 72 bytes, must differ from currentPassword" } } }
  *     responses:
- *       200:
- *         description: Password changed. Every existing session (all access and refresh tokens, open sockets) is revoked; the returned pair replaces the caller's tokens.
- *         content: { application/json: { schema: { $ref: '#/components/schemas/TokenPairResponse' } } }
+ *       200: { $ref: '#/components/responses/TokenPairResponse' }
  *       400: { $ref: '#/components/responses/ValidationError' }
- *       401: { description: Current password incorrect }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.post("/me/password", validate(schemas.changePassword), controller.changePassword);
 
 /**
  * @swagger
- * /api/users/me/cv:
+ * /api/v1/users/me/cv:
  *   post:
  *     tags: [Users]
  *     summary: Upload/replace the current user's CV (PDF/DOC/DOCX, max 5MB)
@@ -72,21 +70,25 @@ router.post("/me/password", validate(schemas.changePassword), controller.changeP
  *         multipart/form-data:
  *           schema: { type: object, properties: { cv: { type: string, format: binary } } }
  *     responses:
- *       200: { description: CV uploaded }
- *       400: { description: Invalid file type/size }
+ *       200: { $ref: '#/components/responses/UserResponse' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       413: { $ref: '#/components/responses/PayloadTooLarge' }
  */
 router.post("/me/cv", uploadCv.single("cv"), controller.uploadCv);
 
 /**
  * @swagger
- * /api/users:
+ * /api/v1/users:
  *   get:
  *     tags: [Users]
  *     summary: List users (admin only)
  *     security: [{ BearerAuth: [] }]
  *     x-required-roles: [admin]
  *     parameters:
+ *       - $ref: '#/components/parameters/Page'
+ *       - $ref: '#/components/parameters/Limit'
+ *       - $ref: '#/components/parameters/Sort'
  *       - in: query
  *         name: role
  *         schema: { type: string, enum: [candidate, recruiter, investor, startup, admin] }
@@ -97,15 +99,15 @@ router.post("/me/cv", uploadCv.single("cv"), controller.uploadCv);
  *         name: limit
  *         schema: { type: integer }
  *     responses:
- *       200: { description: OK }
- *       403: { $ref: '#/components/responses/Forbidden' }
+ *       200: { $ref: '#/components/responses/UserListResponse' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
  */
-router.get("/", authorize(ROLES.ADMIN), controller.list);
+router.get("/", authorize(ROLES.ADMIN), validate(schemas.list, "query"), controller.list);
 
 /**
  * @swagger
- * /api/users/{id}:
+ * /api/v1/users/{id}:
  *   get:
  *     tags: [Users]
  *     summary: Get another user's limited public profile (name, role — not phone/birthdate/location; use /me for your own full profile)
@@ -116,15 +118,15 @@ router.get("/", authorize(ROLES.ADMIN), controller.list);
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: OK }
- *       404: { $ref: '#/components/responses/NotFound' }
+ *       200: { $ref: '#/components/responses/PublicUserProfileResponse' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       404: { $ref: '#/components/responses/NotFound' }
  */
 router.get("/:id", controller.getById);
 
 /**
  * @swagger
- * /api/users/{id}/status:
+ * /api/v1/users/{id}/status:
  *   patch:
  *     tags: [Users]
  *     summary: Activate or deactivate an account (admin only). Deactivation revokes all of the user's sessions immediately and blocks login.
@@ -141,11 +143,12 @@ router.get("/:id", controller.getById);
  *         application/json:
  *           schema: { type: object, required: [isActive], properties: { isActive: { type: boolean } } }
  *     responses:
- *       200: { description: Status updated }
- *       400: { description: Validation error, or an admin targeting their own account }
+ *       200: { $ref: '#/components/responses/UserResponse' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  *       403: { $ref: '#/components/responses/Forbidden' }
  *       404: { $ref: '#/components/responses/NotFound' }
- *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       422: { $ref: '#/components/responses/UnprocessableEntity' }
  */
 router.patch("/:id/status", authorize(ROLES.ADMIN), validate(schemas.setStatus), controller.setStatus);
 

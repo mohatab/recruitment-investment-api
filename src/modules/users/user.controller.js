@@ -4,7 +4,7 @@ const asyncHandler = require("../../common/utils/asyncHandler");
 const { ok, paginated } = require("../../common/utils/response");
 const storage = require("../../common/storage");
 const { safeKey } = require("../../common/middleware/upload");
-const { NotFoundError } = require("../../common/errors/AppError");
+const { ValidationError } = require("../../common/errors/AppError");
 
 const getMe = asyncHandler(async (req, res) => {
   const user = await userService.getById(req.user.id);
@@ -22,7 +22,7 @@ const changePassword = asyncHandler(async (req, res) => {
 });
 
 const uploadCv = asyncHandler(async (req, res) => {
-  if (!req.file) throw new NotFoundError("No file uploaded");
+  if (!req.file) throw new ValidationError("No file uploaded — send one as multipart field `cv`");
   const key = safeKey("cv", req.file.originalname);
   await storage.save(key, req.file.buffer, req.file.mimetype);
   const user = await userService.updateProfile(req.user.id, { cvUrl: storage.getUrl(key) });
@@ -40,8 +40,8 @@ const setStatus = asyncHandler(async (req, res) => {
 });
 
 const list = asyncHandler(async (req, res) => {
-  const { items, meta } = await userService.list(req.query);
-  paginated(res, items, meta);
+  const { items, pagination } = await userService.list(req.query);
+  paginated(res, items, pagination);
 });
 
 module.exports = { getMe, updateMe, changePassword, uploadCv, getById, list, setStatus };

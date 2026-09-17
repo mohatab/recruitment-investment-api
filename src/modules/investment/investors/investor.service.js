@@ -2,11 +2,13 @@ const Investor = require("./investor.model");
 const { NotFoundError } = require("../../../common/errors/AppError");
 
 async function upsertMine(ownerId, data) {
-  return Investor.findOneAndUpdate(
+  const existed = await Investor.exists({ owner: ownerId });
+  const investor = await Investor.findOneAndUpdate(
     { owner: ownerId },
     { $set: data, $setOnInsert: { owner: ownerId } },
     { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
   );
+  return { investor, created: !existed };
 }
 
 async function getMine(ownerId) {

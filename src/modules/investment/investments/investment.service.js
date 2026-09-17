@@ -2,14 +2,20 @@ const Investment = require("./investment.model");
 const Startup = require("../startups/startup.model");
 const stripeService = require("../../payments/stripe.service");
 const notificationService = require("../../notifications/notification.service");
-const { NotFoundError, ValidationError } = require("../../../common/errors/AppError");
+const { NotFoundError, UnprocessableEntityError, CODES } = require("../../../common/errors/AppError");
+const { parsePagination, buildPagination } = require("../../../common/utils/pagination");
+
+const SORTABLE = ["createdAt", "amount", "status"];
 const logger = require("../../../common/utils/logger");
 
 async function create(investorUserId, { startupId, amount }) {
   const startup = await Startup.findById(startupId);
   if (!startup) throw new NotFoundError("Startup not found");
   if (amount < startup.minInvestment) {
-    throw new ValidationError(`Minimum investment for this startup is ${startup.minInvestment}`);
+    throw new UnprocessableEntityError(
+      `Minimum investment for this startup is ${startup.minInvestment}`,
+      CODES.MINIMUM_INVESTMENT_NOT_MET
+    );
   }
 
   const investment = await Investment.create({ investor: investorUserId, startup: startup._id, amount });
@@ -64,7 +70,9 @@ async function handlePaymentIntentFailed(paymentIntentId) {
 async function refund(investmentId) {
   const investment = await Investment.findById(investmentId);
   if (!investment) throw new NotFoundError("Investment not found");
-  if (investment.status !== "paid") throw new ValidationError("Only a paid investment can be refunded");
+  if (investment.status !== "paid") {
+    throw new UnprocessableEntityError("Only a paid investment can be refunded", CODES.INVESTMENT_NOT_REFUNDABLE);
+  }
 
   await stripeService.refundPaymentIntent(investment.stripePaymentIntentId);
   investment.status = "refunded";
@@ -73,19 +81,31 @@ async function refund(investmentId) {
   return investment;
 }
 
-async function listMine(investorUserId) {
-  return Investment.find({ investor: investorUserId }).populate("startup", "name stage").sort({ createdAt: -1 });
+async function listMine(investorUserId, query) {
+  return listFor({ investor: investorUserId }, query, ["startup", "name stage"]);
 }
 
-async function listForStartupOwner(ownerId) {
+async function listForStartupOwner(ownerId, query) {
   const startup = await Startup.findOne({ owner: ownerId });
   if (!startup) throw new NotFoundError("You haven't created a startup profile yet");
-  return Investment.find({ startup: startup._id })
-    .populate("investor", "firstName lastName email")
-    .sort({ createdAt: -1 });
+  return listFor({ startup: startup._id }, query, ["investor", "firstName lastName email"]);
+}
+
+async function listFor(filter, query, populate) {
+  const { page, limit, skip, sort } = parsePagination(query, { allowedSort: SORTABLE });
+  const [items, total] = await Promise.all([
+    Investment.find(filter)
+      .sort(sort)
+      .skip(skip)
+      .limit(limit)
+      .populate(...populate),
+    Investment.countDocuments(filter),
+  ]);
+  return { items, pagination: buildPagination({ page, limit, total }) };
 }
 
 module.exports = {
+  SORTABLE,
   create,
   handlePaymentIntentSucceeded,
   handlePaymentIntentFailed,

@@ -6,7 +6,14 @@ const AuthToken = require("./authToken.model");
 const { signAccessToken, verifyAccessToken, generateRefreshToken, hashToken } = require("./jwt");
 const { sendEmail } = require("../../common/services/email.service");
 const { getIO } = require("../../realtime/ioRegistry");
-const { AppError, ConflictError, UnauthorizedError, NotFoundError } = require("../../common/errors/AppError");
+const {
+  AppError,
+  ConflictError,
+  ForbiddenError,
+  UnauthorizedError,
+  NotFoundError,
+  CODES,
+} = require("../../common/errors/AppError");
 const logger = require("../../common/utils/logger");
 const env = require("../../config/env");
 
@@ -21,7 +28,7 @@ const EMAIL_RESEND_COOLDOWN_MS = 60 * 1000; // blunts mail-bombing a victim's in
 const DUMMY_HASH = bcrypt.hashSync("dummy-password-for-timing", 10);
 
 const invalidSession = () => new UnauthorizedError("Invalid or expired authentication token");
-const invalidToken = () => new AppError("Invalid or expired token", 400, "INVALID_TOKEN");
+const invalidToken = () => new AppError("Invalid or expired token", 400, CODES.INVALID_TOKEN);
 
 // ---------- sessions ----------
 
@@ -124,7 +131,7 @@ async function login({ email, password }) {
   const passwordOk = await bcrypt.compare(password, user ? user.password : DUMMY_HASH);
   if (!user || !passwordOk) throw new UnauthorizedError("Invalid email or password");
   // Only disclosed after the password proved ownership of the account.
-  if (!user.isActive) throw new AppError("This account has been deactivated", 403, "ACCOUNT_DISABLED");
+  if (!user.isActive) throw new ForbiddenError("This account has been deactivated", CODES.ACCOUNT_DISABLED);
 
   const tokens = await issueTokenPair(user);
   user.password = undefined;

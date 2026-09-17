@@ -1,15 +1,19 @@
 const Startup = require("./startup.model");
 const Investor = require("../investors/investor.model");
 const { NotFoundError } = require("../../../common/errors/AppError");
-const { parsePagination, buildMeta } = require("../../../common/utils/pagination");
+const { parsePagination, buildPagination } = require("../../../common/utils/pagination");
 
+const SORTABLE = ["createdAt", "name", "totalRaising", "minInvestment", "raisedSoFar"];
+
+// Reports whether this created the profile so the route can answer 201 vs 200.
 async function upsertMine(ownerId, data) {
+  const existed = await Startup.exists({ owner: ownerId });
   const startup = await Startup.findOneAndUpdate(
     { owner: ownerId },
     { $set: data, $setOnInsert: { owner: ownerId } },
     { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
   );
-  return startup;
+  return { startup, created: !existed };
 }
 
 async function getMine(ownerId) {
@@ -25,7 +29,7 @@ async function getById(id) {
 }
 
 async function list(query) {
-  const { page, limit, skip, sort } = parsePagination(query);
+  const { page, limit, skip, sort } = parsePagination(query, { allowedSort: SORTABLE });
   const filter = {};
   if (query.industry) filter.industries = query.industry;
   if (query.stage) filter.stage = query.stage;
@@ -34,13 +38,13 @@ async function list(query) {
     Startup.find(filter).sort(sort).skip(skip).limit(limit),
     Startup.countDocuments(filter),
   ]);
-  return { items, meta: buildMeta({ page, limit, total }) };
+  return { items, pagination: buildPagination({ page, limit, total }) };
 }
 
 // "the system finds relevant opportunities": a plain filter query against
 // the investor's own saved criteria — deliberately not a recommendation
 // model, since nothing in this project's data would make one meaningful.
-async function matchesForInvestor(investorUserId) {
+async function matchesForInvestor(investorUserId, query = {}) {
   const investor = await Investor.findOne({ owner: investorUserId });
   if (!investor) throw new NotFoundError("Set your investor criteria first");
 
@@ -52,7 +56,12 @@ async function matchesForInvestor(investorUserId) {
   if (criteria.stages.length) filter.stage = { $in: criteria.stages };
   if (criteria.locations.length) filter.location = { $in: criteria.locations };
 
-  return Startup.find(filter).sort({ createdAt: -1 });
+  const { page, limit, skip, sort } = parsePagination(query, { allowedSort: SORTABLE });
+  const [items, total] = await Promise.all([
+    Startup.find(filter).sort(sort).skip(skip).limit(limit),
+    Startup.countDocuments(filter),
+  ]);
+  return { items, pagination: buildPagination({ page, limit, total }) };
 }
 
 // A transparent, documented rule-based heuristic — not a trained model.
@@ -67,4 +76,4 @@ function successAssessment({ isSoftwareBased, hasAdCampaigns, hasConsulting, tot
   };
 }
 
-module.exports = { upsertMine, getMine, getById, list, matchesForInvestor, successAssessment };
+module.exports = { upsertMine, getMine, getById, list, matchesForInvestor, successAssessment, SORTABLE };

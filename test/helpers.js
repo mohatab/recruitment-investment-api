@@ -18,7 +18,7 @@ async function registerUser(overrides = {}, { verified = true } = {}) {
     role: "candidate",
     ...overrides,
   };
-  const res = await request(app).post("/api/auth/register").send(payload);
+  const res = await request(app).post("/api/v1/auth/register").send(payload);
   if (verified && res.status === 201) {
     await User.updateOne({ _id: res.body.data.user._id }, { emailVerifiedAt: new Date() });
   }
@@ -41,7 +41,7 @@ async function createAdmin() {
     role: "admin",
     emailVerifiedAt: new Date(),
   });
-  const loginRes = await request(app).post("/api/auth/login").send({ email, password });
+  const loginRes = await request(app).post("/api/v1/auth/login").send({ email, password });
   return { user: loginRes.body.data.user, accessToken: loginRes.body.data.accessToken };
 }
 

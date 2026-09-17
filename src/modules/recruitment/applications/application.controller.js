@@ -8,13 +8,13 @@ const apply = asyncHandler(async (req, res) => {
 });
 
 const listForJob = asyncHandler(async (req, res) => {
-  const { items, meta } = await applicationService.listForJob(req.params.jobId, req.user.id, req.query);
-  paginated(res, items, meta);
+  const { items, pagination } = await applicationService.listForJob(req.params.jobId, req.user.id, req.query);
+  paginated(res, items, pagination);
 });
 
 const listMine = asyncHandler(async (req, res) => {
-  const { items, meta } = await applicationService.listMine(req.user.id, req.query);
-  paginated(res, items, meta);
+  const { items, pagination } = await applicationService.listMine(req.user.id, req.query);
+  paginated(res, items, pagination);
 });
 
 const updateStatus = asyncHandler(async (req, res) => {
