@@ -67,6 +67,74 @@ describe("notifications", () => {
     expect(investorInbox.body.data.some((n) => n.message === "candidates: new feature")).toBe(false);
   });
 
+  // Regression: a role broadcast had one shared `read` flag, and any
+  // authenticated user (any role) could flip it for the whole audience.
+  describe("role broadcasts", () => {
+    const inbox = async (who) =>
+      (await request(app).get("/api/notifications").set("Authorization", `Bearer ${who.accessToken}`)).body.data;
+    const markRead = (who, id) =>
+      request(app).patch(`/api/notifications/${id}/read`).set("Authorization", `Bearer ${who.accessToken}`);
+
+    async function broadcastToCandidates() {
+      const admin = await createAdmin();
+      const res = await request(app)
+        .post("/api/notifications/broadcast")
+        .set("Authorization", `Bearer ${admin.accessToken}`)
+        .send({ message: "candidates only", targetRole: "candidate" });
+      return res.body.data;
+    }
+
+    test("a user outside the target role cannot mark it read, and nothing changes for the audience", async () => {
+      const notification = await broadcastToCandidates();
+      const [investor, candidate] = await Promise.all([
+        registerUser({ role: "investor" }),
+        registerUser({ role: "candidate" }),
+      ]);
+
+      const res = await markRead(investor, notification._id);
+      expect(res.status).toBe(403);
+      expect(res.body.error.code).toBe("FORBIDDEN");
+      expect((await inbox(candidate)).find((n) => n._id === notification._id).read).toBe(false);
+    });
+
+    test("read state is per user: one candidate reading it doesn't mark it read for the others", async () => {
+      const notification = await broadcastToCandidates();
+      const [alice, bob] = await Promise.all([
+        registerUser({ role: "candidate" }),
+        registerUser({ role: "candidate" }),
+      ]);
+
+      const res = await markRead(alice, notification._id);
+      expect(res.status).toBe(200);
+      expect(res.body.data.read).toBe(true);
+      expect((await inbox(alice)).find((n) => n._id === notification._id).read).toBe(true);
+      expect((await inbox(bob)).find((n) => n._id === notification._id).read).toBe(false);
+    });
+
+    test("who has read a broadcast is never exposed to other recipients", async () => {
+      const notification = await broadcastToCandidates();
+      const [alice, bob] = await Promise.all([
+        registerUser({ role: "candidate" }),
+        registerUser({ role: "candidate" }),
+      ]);
+      await markRead(alice, notification._id).expect(200);
+
+      const seenByBob = (await inbox(bob)).find((n) => n._id === notification._id);
+      expect(seenByBob.readBy).toBeUndefined();
+      expect(JSON.stringify(seenByBob)).not.toContain(alice.user._id);
+    });
+
+    test("a personal notification of another user of the same role is still forbidden, and unknown ids are 404", async () => {
+      const [owner, sameRole] = await Promise.all([
+        registerUser({ role: "candidate" }),
+        registerUser({ role: "candidate" }),
+      ]);
+      const personal = await notificationService.notifyUser(owner.user._id, "private");
+      expect((await markRead(sameRole, personal._id)).status).toBe(403);
+      expect((await markRead(sameRole, "507f1f77bcf86cd799439011")).status).toBe(404);
+    });
+  });
+
   test("broadcast requires exactly one of userId or targetRole", async () => {
     const admin = await createAdmin();
     const res = await request(app)

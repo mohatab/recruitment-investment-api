@@ -1,6 +1,6 @@
 const Startup = require("./startup.model");
 const Investor = require("../investors/investor.model");
-const { NotFoundError, ForbiddenError } = require("../../../common/errors/AppError");
+const { NotFoundError } = require("../../../common/errors/AppError");
 const { parsePagination, buildMeta } = require("../../../common/utils/pagination");
 
 async function upsertMine(ownerId, data) {
@@ -67,9 +67,4 @@ function successAssessment({ isSoftwareBased, hasAdCampaigns, hasConsulting, tot
   };
 }
 
-function assertOwnership(startup, userId) {
-  if (String(startup.owner) !== String(userId))
-    throw new ForbiddenError("You can only manage your own startup profile");
-}
-
-module.exports = { upsertMine, getMine, getById, list, matchesForInvestor, successAssessment, assertOwnership };
+module.exports = { upsertMine, getMine, getById, list, matchesForInvestor, successAssessment };

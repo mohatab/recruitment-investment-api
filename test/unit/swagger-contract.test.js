@@ -1,111 +1,73 @@
-// Asserts the generated OpenAPI spec actually documents every implemented
-// route — not by hand-maintaining a duplicate list (which would silently
-// drift the moment someone adds a route and forgets Swagger), but by
-// introspecting the real Express router objects the app mounts and
-// diffing that against `swaggerSpec.paths`.
+// The generated OpenAPI spec must match the real routers: every route is
+// documented, and its documented security matches its actual authorization
+// middleware. Both sides come from code (JSDoc + router introspection), so
+// adding a route or changing its guards without updating the docs fails here.
 const swaggerSpec = require("../../src/docs/swagger");
+const { collectRoutes } = require("../routes");
 
-const authRoutes = require("../../src/modules/auth/auth.routes");
-const userRoutes = require("../../src/modules/users/user.routes");
-const jobRoutes = require("../../src/modules/recruitment/jobs/job.routes");
-const applicationsTopRoutes = require("../../src/modules/recruitment/applications/applications.top.routes");
-const startupRoutes = require("../../src/modules/investment/startups/startup.routes");
-const investorRoutes = require("../../src/modules/investment/investors/investor.routes");
-const investmentRoutes = require("../../src/modules/investment/investments/investment.routes");
-const paymentWebhookRoutes = require("../../src/modules/payments/payment.webhook.routes");
-const notificationRoutes = require("../../src/modules/notifications/notification.routes");
-const messageRoutes = require("../../src/modules/messaging/message.routes");
-const experienceRoutes = require("../../src/modules/experience/experience.routes");
-const contactRoutes = require("../../src/modules/contact/contact.routes");
-const healthRoutes = require("../../src/modules/health/health.routes");
-
-// Converts Express's `:param` route syntax to OpenAPI's `{param}`.
-function toOpenApiPath(expressPath) {
-  return expressPath.replace(/:([A-Za-z0-9_]+)/g, "{$1}");
-}
-
-// One level of router.stack, no nested-router recursion needed — this
-// mirrors exactly how app.js mounts each module (a flat list of routers,
-// with jobs/applications being the one nested case, handled explicitly
-// below rather than generically decoding Express's internal route regexps).
-function routesOf(router, prefix) {
-  return router.stack
-    .filter((layer) => layer.route)
-    .flatMap((layer) =>
-      Object.keys(layer.route.methods).map(
-        (method) =>
-          `${method.toUpperCase()} ${prefix}${toOpenApiPath(layer.route.path === "/" ? "" : layer.route.path)}`
-      )
-    );
-}
+const routes = collectRoutes();
+const operation = (r) => swaggerSpec.paths?.[r.openapiPath]?.[r.method.toLowerCase()];
+const label = (r) => `${r.method} ${r.path}`;
 
 describe("Swagger contract", () => {
-  test("every implemented route is documented in the generated OpenAPI spec", () => {
-    const implemented = [
-      ...routesOf(healthRoutes, ""),
-      ...routesOf(authRoutes, "/api/auth"),
-      ...routesOf(userRoutes, "/api/users"),
-      ...routesOf(jobRoutes, "/api/jobs"),
-      // job.routes.js mounts application.routes.js at /:jobId/applications
-      ...jobRoutes.stack
-        .filter((layer) => !layer.route && layer.name !== "bound dispatch")
-        .flatMap((layer) =>
-          layer.handle.stack
-            .filter((l) => l.route)
-            .flatMap((l) =>
-              Object.keys(l.route.methods).map(
-                (m) =>
-                  `${m.toUpperCase()} /api/jobs/{jobId}/applications${toOpenApiPath(l.route.path === "/" ? "" : l.route.path)}`
-              )
-            )
-        ),
-      ...routesOf(applicationsTopRoutes, "/api/applications"),
-      ...routesOf(startupRoutes, "/api/startups"),
-      ...routesOf(investorRoutes, "/api/investors"),
-      ...routesOf(investmentRoutes, "/api/investments"),
-      ...routesOf(paymentWebhookRoutes, "/api/payments"),
-      ...routesOf(notificationRoutes, "/api/notifications"),
-      ...routesOf(messageRoutes, "/api/messages"),
-      ...routesOf(experienceRoutes, "/api/experiences"),
-      ...routesOf(contactRoutes, "/api/contact"),
-    ];
+  test("introspection finds the application's routes", () => {
+    expect(routes.length).toBeGreaterThan(45);
+  });
 
-    expect(implemented.length).toBeGreaterThan(40); // sanity check the introspection itself found routes
+  test("every implemented route is documented", () => {
+    expect(routes.filter((r) => !operation(r)).map(label)).toEqual([]);
+  });
 
-    const documented = new Set();
-    for (const [path, methodsObj] of Object.entries(swaggerSpec.paths || {})) {
-      for (const method of Object.keys(methodsObj)) {
-        documented.add(`${method.toUpperCase()} ${path}`);
-      }
-    }
+  test("every documented operation corresponds to a real route", () => {
+    const implemented = new Set(routes.map((r) => `${r.method.toLowerCase()} ${r.openapiPath}`));
+    const documented = Object.entries(swaggerSpec.paths).flatMap(([p, ops]) =>
+      Object.keys(ops).map((m) => `${m} ${p}`)
+    );
+    expect(documented.filter((op) => !implemented.has(op))).toEqual([]);
+  });
 
-    const undocumented = implemented.filter((route) => !documented.has(route));
-    expect(undocumented).toEqual([]);
+  test("security is declared explicitly and matches whether the route authenticates", () => {
+    const wrong = routes.filter((r) => {
+      const { security } = operation(r);
+      const expected = r.authenticated ? [{ BearerAuth: [] }] : [];
+      return JSON.stringify(security) !== JSON.stringify(expected);
+    });
+    expect(wrong.map(label)).toEqual([]);
+  });
+
+  test("authenticated routes document 401", () => {
+    expect(routes.filter((r) => r.authenticated && !operation(r).responses["401"]).map(label)).toEqual([]);
+  });
+
+  test("role-restricted and verified-email routes document 403 and exactly their required roles", () => {
+    const wrong = routes.filter((r) => {
+      const op = operation(r);
+      if ((r.roles || r.requiresVerifiedEmail) && !op.responses["403"]) return true;
+      const documentedRoles = op["x-required-roles"] ? [...op["x-required-roles"]].sort() : null;
+      return JSON.stringify(documentedRoles) !== JSON.stringify(r.roles);
+    });
+    expect(wrong.map(label)).toEqual([]);
+  });
+
+  test("routes gated on a verified email declare x-requires-verified-email, and only those", () => {
+    const wrong = routes.filter((r) => Boolean(operation(r)["x-requires-verified-email"]) !== r.requiresVerifiedEmail);
+    expect(wrong.map(label)).toEqual([]);
   });
 
   test("every $ref in the spec resolves to a real component (no broken references)", () => {
     const broken = [];
-
-    function resolves(ref) {
-      // "#/components/schemas/User" -> ["components", "schemas", "User"]
-      const path = ref.replace(/^#\//, "").split("/");
-      let node = swaggerSpec;
-      for (const segment of path) {
-        node = node?.[segment];
-        if (node === undefined) return false;
-      }
-      return true;
-    }
-
-    function walk(node) {
+    const resolves = (ref) =>
+      ref
+        .replace(/^#\//, "")
+        .split("/")
+        .reduce((node, segment) => node?.[segment], swaggerSpec) !== undefined;
+    (function walk(node) {
       if (Array.isArray(node)) return node.forEach(walk);
       if (node && typeof node === "object") {
         if (typeof node.$ref === "string" && !resolves(node.$ref)) broken.push(node.$ref);
         Object.values(node).forEach(walk);
       }
-    }
-    walk(swaggerSpec);
-
+    })(swaggerSpec);
     expect(broken).toEqual([]);
   });
 });

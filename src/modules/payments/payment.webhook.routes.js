@@ -11,6 +11,7 @@ const router = express.Router();
  *   post:
  *     tags: [Payments]
  *     summary: Stripe webhook — verifies the signature before trusting any payment status (not client-reported)
+ *     security: []
  *     responses:
  *       200: { description: Event processed }
  *       400: { description: Invalid signature }

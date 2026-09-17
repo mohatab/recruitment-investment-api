@@ -2,7 +2,7 @@ const Investment = require("./investment.model");
 const Startup = require("../startups/startup.model");
 const stripeService = require("../../payments/stripe.service");
 const notificationService = require("../../notifications/notification.service");
-const { NotFoundError, ForbiddenError, ValidationError } = require("../../../common/errors/AppError");
+const { NotFoundError, ValidationError } = require("../../../common/errors/AppError");
 const logger = require("../../../common/utils/logger");
 
 async function create(investorUserId, { startupId, amount }) {
@@ -59,12 +59,11 @@ async function handlePaymentIntentFailed(paymentIntentId) {
   await Investment.updateOne({ stripePaymentIntentId: paymentIntentId, status: "pending" }, { status: "failed" });
 }
 
-async function refund(investmentId, requesterId, requesterRole) {
+// Admin only (decision D3, enforced by the route): an investor must not be
+// able to reclaim money already credited to a startup.
+async function refund(investmentId) {
   const investment = await Investment.findById(investmentId);
   if (!investment) throw new NotFoundError("Investment not found");
-  if (requesterRole !== "admin" && String(investment.investor) !== String(requesterId)) {
-    throw new ForbiddenError("You can only refund your own investments");
-  }
   if (investment.status !== "paid") throw new ValidationError("Only a paid investment can be refunded");
 
   await stripeService.refundPaymentIntent(investment.stripePaymentIntentId);

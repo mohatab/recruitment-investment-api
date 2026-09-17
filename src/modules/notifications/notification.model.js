@@ -6,7 +6,12 @@ const notificationSchema = new mongoose.Schema(
     message: { type: String, required: true },
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     targetRole: { type: String, enum: [...Object.values(ROLES), null], default: null },
-    read: { type: Boolean, default: false },
+    read: { type: Boolean, default: false }, // personal notifications only
+    // Role broadcasts: who has read it. Per user, so one reader can't mark it
+    // read for the whole role.
+    // ponytail: array grows with the role's audience; move to a receipts
+    // collection if broadcasts reach many thousands of readers.
+    readBy: { type: [mongoose.Schema.Types.ObjectId], default: [] },
   },
   { timestamps: true }
 );

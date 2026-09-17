@@ -17,6 +17,7 @@ router.use(authenticate);
  *     tags: [Applications]
  *     summary: Apply to a job (candidates only)
  *     security: [{ BearerAuth: [] }]
+ *     x-required-roles: [candidate]
  *     parameters:
  *       - in: path
  *         name: jobId
@@ -30,6 +31,8 @@ router.use(authenticate);
  *     responses:
  *       201: { description: Submitted }
  *       409: { description: Already applied to this job }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
  */
 router.post("/", authorize(ROLES.CANDIDATE), validate(schemas.create), controller.apply);
 
@@ -40,6 +43,7 @@ router.post("/", authorize(ROLES.CANDIDATE), validate(schemas.create), controlle
  *     tags: [Applications]
  *     summary: List applications for a job (the owning recruiter only)
  *     security: [{ BearerAuth: [] }]
+ *     x-required-roles: [recruiter]
  *     parameters:
  *       - in: path
  *         name: jobId
@@ -51,6 +55,7 @@ router.post("/", authorize(ROLES.CANDIDATE), validate(schemas.create), controlle
  *     responses:
  *       200: { description: OK }
  *       403: { $ref: '#/components/responses/Forbidden' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.get("/", authorize(ROLES.RECRUITER), controller.listForJob);
 

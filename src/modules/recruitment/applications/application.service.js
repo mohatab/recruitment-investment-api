@@ -2,7 +2,8 @@ const Application = require("./application.model");
 const Job = require("../jobs/job.model");
 const User = require("../../users/user.model");
 const notificationService = require("../../notifications/notification.service");
-const { NotFoundError, ForbiddenError, ConflictError, ValidationError } = require("../../../common/errors/AppError");
+const { NotFoundError, ConflictError, ValidationError } = require("../../../common/errors/AppError");
+const assertOwner = require("../../../common/utils/assertOwner");
 const { parsePagination, buildMeta } = require("../../../common/utils/pagination");
 
 // A candidate can only ever move an application forward by withdrawing
@@ -43,9 +44,7 @@ async function apply(jobId, applicantId, input) {
 async function listForJob(jobId, recruiterId, query) {
   const job = await Job.findById(jobId);
   if (!job) throw new NotFoundError("Job not found");
-  if (String(job.recruiter) !== String(recruiterId)) {
-    throw new ForbiddenError("You can only view applications for your own job postings");
-  }
+  assertOwner(job.recruiter, recruiterId, "You can only view applications for your own job postings");
 
   const { page, limit, skip, sort } = parsePagination(query);
   const filter = { job: jobId };
@@ -72,9 +71,8 @@ async function listMine(applicantId, query) {
 async function updateStatus(applicationId, recruiterId, nextStatus) {
   const application = await Application.findById(applicationId).populate("job");
   if (!application) throw new NotFoundError("Application not found");
-  if (String(application.job.recruiter) !== String(recruiterId)) {
-    throw new ForbiddenError("You can only manage applications for your own job postings");
-  }
+  // job is null if the posting was deleted; assertOwner treats that as not owned.
+  assertOwner(application.job?.recruiter, recruiterId, "You can only manage applications for your own job postings");
 
   const allowed = TRANSITIONS[application.status] || [];
   if (!allowed.includes(nextStatus)) {

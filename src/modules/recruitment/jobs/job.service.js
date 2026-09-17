@@ -1,5 +1,6 @@
 const Job = require("./job.model");
-const { NotFoundError, ForbiddenError } = require("../../../common/errors/AppError");
+const { NotFoundError } = require("../../../common/errors/AppError");
+const assertOwner = require("../../../common/utils/assertOwner");
 const { parsePagination, buildMeta } = require("../../../common/utils/pagination");
 const escapeRegex = require("../../../common/utils/escapeRegex");
 
@@ -28,15 +29,9 @@ async function getById(id) {
   return job;
 }
 
-function assertOwnership(job, userId) {
-  if (String(job.recruiter) !== String(userId)) {
-    throw new ForbiddenError("You can only manage your own job postings");
-  }
-}
-
 async function update(id, userId, updates) {
   const job = await getById(id);
-  assertOwnership(job, userId);
+  assertOwner(job.recruiter, userId, "You can only manage your own job postings");
   Object.assign(job, updates);
   await job.save();
   return job;
@@ -44,8 +39,8 @@ async function update(id, userId, updates) {
 
 async function remove(id, userId) {
   const job = await getById(id);
-  assertOwnership(job, userId);
+  assertOwner(job.recruiter, userId, "You can only manage your own job postings");
   await job.deleteOne();
 }
 
-module.exports = { create, list, getById, update, remove, assertOwnership };
+module.exports = { create, list, getById, update, remove };

@@ -13,6 +13,7 @@ const router = express.Router();
  *   get:
  *     tags: [Startups]
  *     summary: List/browse startup fundraising profiles
+ *     security: []
  *     parameters:
  *       - in: query
  *         name: industry
@@ -31,6 +32,7 @@ router.get("/", validate(schemas.list, "query"), controller.list);
  *   post:
  *     tags: [Startups]
  *     summary: Rule-based (not ML) success-likelihood heuristic — stateless, not persisted
+ *     security: []
  *     requestBody:
  *       required: true
  *       content:
@@ -48,9 +50,12 @@ router.post("/success-assessment", validate(schemas.successAssessment), controll
  *     tags: [Startups]
  *     summary: Startups matching the current investor's saved criteria
  *     security: [{ BearerAuth: [] }]
+ *     x-required-roles: [investor]
  *     responses:
  *       200: { description: OK }
  *       404: { description: Investor criteria not set yet }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
  */
 router.get("/matches", authenticate, authorize(ROLES.INVESTOR), controller.matches);
 
@@ -61,12 +66,15 @@ router.get("/matches", authenticate, authorize(ROLES.INVESTOR), controller.match
  *     tags: [Startups]
  *     summary: Create or update the current user's startup profile (startup role only)
  *     security: [{ BearerAuth: [] }]
+ *     x-required-roles: [startup]
  *     requestBody:
  *       required: true
  *       content: { application/json: { schema: { $ref: '#/components/schemas/StartupInput' } } }
  *     responses:
  *       200: { description: Saved }
  *       400: { $ref: '#/components/responses/ValidationError' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
  */
 router.put("/me", authenticate, authorize(ROLES.STARTUP), validate(schemas.upsert), controller.upsertMine);
 
@@ -77,9 +85,12 @@ router.put("/me", authenticate, authorize(ROLES.STARTUP), validate(schemas.upser
  *     tags: [Startups]
  *     summary: Get the current user's own startup profile
  *     security: [{ BearerAuth: [] }]
+ *     x-required-roles: [startup]
  *     responses:
  *       200: { description: OK }
  *       404: { $ref: '#/components/responses/NotFound' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
  */
 router.get("/me", authenticate, authorize(ROLES.STARTUP), controller.getMine);
 
@@ -89,6 +100,7 @@ router.get("/me", authenticate, authorize(ROLES.STARTUP), controller.getMine);
  *   get:
  *     tags: [Startups]
  *     summary: Get a startup profile by id
+ *     security: []
  *     parameters:
  *       - in: path
  *         name: id

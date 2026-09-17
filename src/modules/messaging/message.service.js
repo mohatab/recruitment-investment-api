@@ -1,8 +1,15 @@
 const Message = require("./message.model");
+const User = require("../users/user.model");
+const { NotFoundError, ValidationError } = require("../../common/errors/AppError");
 const { getIO } = require("../../realtime/ioRegistry");
 const { onlineUsers } = require("../../realtime/presence");
 
+// Shared by REST and Socket.IO, so both apply the same recipient rules.
 async function send(senderId, receiverId, body) {
+  if (String(senderId) === String(receiverId)) throw new ValidationError("You cannot send a message to yourself");
+  // Deactivated accounts are indistinguishable from missing ones here.
+  if (!(await User.exists({ _id: receiverId, isActive: true }))) throw new NotFoundError("Recipient not found");
+
   const roomId = Message.roomIdFor(senderId, receiverId);
   const message = await Message.create({
     sender: senderId,
@@ -48,4 +55,14 @@ async function listConversations(userId) {
   return Array.from(conversations.values());
 }
 
-module.exports = { send, listWith, listConversations };
+// Users who share a conversation with userId: the only people allowed to see
+// that user's online status (same rule as isOnline in listConversations).
+async function conversationPartners(userId) {
+  const [received, sent] = await Promise.all([
+    Message.distinct("receiver", { sender: userId }),
+    Message.distinct("sender", { receiver: userId }),
+  ]);
+  return [...new Set([...received, ...sent].map(String))];
+}
+
+module.exports = { send, listWith, listConversations, conversationPartners };

@@ -150,13 +150,13 @@ Node.js / Express · MongoDB + Mongoose · Socket.IO · JWT + bcryptjs · Stripe
   fragment, so they never reach the client app's server logs.
 - `admin` cannot be self-registered; it's provisioned directly in the database.
 
-| Role      | Can do                                                               |
-| --------- | -------------------------------------------------------------------- |
-| candidate | apply to jobs, manage own profile/experience/CV                      |
-| recruiter | post/manage jobs, review & move applications through their lifecycle |
-| startup   | manage one fundraising profile, view investments received            |
-| investor  | manage criteria, browse/match startups, create investments           |
-| admin     | list users, activate/deactivate accounts, broadcast notifications    |
+| Role      | Can do                                                                           |
+| --------- | -------------------------------------------------------------------------------- |
+| candidate | apply to jobs, manage own profile/experience/CV                                  |
+| recruiter | post/manage jobs, review & move applications through their lifecycle             |
+| startup   | manage one fundraising profile, view investments received                        |
+| investor  | manage criteria (private), browse/match startups, create investments             |
+| admin     | list users, activate/deactivate accounts, send notifications, refund investments |
 
 ## API documentation
 

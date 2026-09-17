@@ -21,6 +21,7 @@ router.use(authenticate);
  *           schema: { type: object, required: [receiverId, body], properties: { receiverId: { type: string }, body: { type: string } } }
  *     responses:
  *       201: { description: Sent }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.post("/", validate(schemas.send), controller.send);
 
@@ -33,6 +34,7 @@ router.post("/", validate(schemas.send), controller.send);
  *     security: [{ BearerAuth: [] }]
  *     responses:
  *       200: { description: OK }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.get("/conversations", controller.listConversations);
 
@@ -50,6 +52,7 @@ router.get("/conversations", controller.listConversations);
  *         schema: { type: string }
  *     responses:
  *       200: { description: OK }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.get("/:userId", controller.listWith);
 

@@ -34,6 +34,7 @@ router.get("/me", controller.getMe);
  *     responses:
  *       200: { description: Updated }
  *       400: { $ref: '#/components/responses/ValidationError' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.patch("/me", validate(schemas.updateProfile), controller.updateMe);
 
@@ -73,6 +74,7 @@ router.post("/me/password", validate(schemas.changePassword), controller.changeP
  *     responses:
  *       200: { description: CV uploaded }
  *       400: { description: Invalid file type/size }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.post("/me/cv", uploadCv.single("cv"), controller.uploadCv);
 
@@ -83,6 +85,7 @@ router.post("/me/cv", uploadCv.single("cv"), controller.uploadCv);
  *     tags: [Users]
  *     summary: List users (admin only)
  *     security: [{ BearerAuth: [] }]
+ *     x-required-roles: [admin]
  *     parameters:
  *       - in: query
  *         name: role
@@ -96,6 +99,7 @@ router.post("/me/cv", uploadCv.single("cv"), controller.uploadCv);
  *     responses:
  *       200: { description: OK }
  *       403: { $ref: '#/components/responses/Forbidden' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.get("/", authorize(ROLES.ADMIN), controller.list);
 
@@ -114,6 +118,7 @@ router.get("/", authorize(ROLES.ADMIN), controller.list);
  *     responses:
  *       200: { description: OK }
  *       404: { $ref: '#/components/responses/NotFound' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.get("/:id", controller.getById);
 
@@ -124,6 +129,7 @@ router.get("/:id", controller.getById);
  *     tags: [Users]
  *     summary: Activate or deactivate an account (admin only). Deactivation revokes all of the user's sessions immediately and blocks login.
  *     security: [{ BearerAuth: [] }]
+ *     x-required-roles: [admin]
  *     parameters:
  *       - in: path
  *         name: id
@@ -139,6 +145,7 @@ router.get("/:id", controller.getById);
  *       400: { description: Validation error, or an admin targeting their own account }
  *       403: { $ref: '#/components/responses/Forbidden' }
  *       404: { $ref: '#/components/responses/NotFound' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.patch("/:id/status", authorize(ROLES.ADMIN), validate(schemas.setStatus), controller.setStatus);
 

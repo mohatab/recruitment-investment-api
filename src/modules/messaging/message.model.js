@@ -16,6 +16,9 @@ const messageSchema = new mongoose.Schema(
 // roomId-alone query), so a separate single-field index on roomId would be
 // pure write overhead with no query it uniquely serves.
 messageSchema.index({ roomId: 1, createdAt: 1 });
+// conversationPartners(): distinct receivers of a sender and senders to a receiver.
+messageSchema.index({ sender: 1, receiver: 1 });
+messageSchema.index({ receiver: 1, sender: 1 });
 
 // Deterministic room id for a pair of users, independent of who's "sender"
 // in a given message — replaces the old client-supplied `roomId` (which let

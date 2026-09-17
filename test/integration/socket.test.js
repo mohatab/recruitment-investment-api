@@ -6,7 +6,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 const { io: ioClient } = require("socket.io-client");
 const jsonwebtoken = require("jsonwebtoken");
-const { app, request, registerUser } = require("../helpers");
+const { app, request, registerUser, createAdmin } = require("../helpers");
 const { initSocket } = require("../../src/realtime/socket");
 const { setIO } = require("../../src/realtime/ioRegistry");
 const messageService = require("../../src/modules/messaging/message.service");
@@ -108,6 +108,80 @@ describe("Socket.IO handshake authentication", () => {
   });
 });
 
+describe("presence (who may see that a user is online)", () => {
+  const presenceEvents = (client) => {
+    const events = [];
+    client.on("presence", (e) => events.push(e));
+    return events;
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 250));
+
+  // Regression: presence went to role_<role>, i.e. every user with the same
+  // role, while REST only shows isOnline to conversation partners.
+  test("only conversation partners are told; strangers with the same role are not", async () => {
+    const [alice, partner, stranger] = await Promise.all([registerUser(), registerUser(), registerUser()]);
+    await request(app)
+      .post("/api/messages")
+      .set("Authorization", `Bearer ${partner.accessToken}`)
+      .send({ receiverId: alice.user._id, body: "hello" })
+      .expect(201);
+
+    const partnerSocket = connectWithToken(partner.accessToken);
+    const strangerSocket = connectWithToken(stranger.accessToken);
+    await Promise.all([connected(partnerSocket), connected(strangerSocket)]);
+    const partnerSaw = presenceEvents(partnerSocket);
+    const strangerSaw = presenceEvents(strangerSocket);
+
+    const aliceSocket = connectWithToken(alice.accessToken);
+    await connected(aliceSocket);
+    await settle();
+    aliceSocket.close();
+    await settle();
+
+    expect(partnerSaw).toEqual([
+      { userId: alice.user._id, online: true },
+      { userId: alice.user._id, online: false },
+    ]);
+    expect(strangerSaw).toEqual([]);
+  });
+
+  test("a second tab doesn't re-announce online, and closing one of two tabs doesn't announce offline", async () => {
+    const [alice, partner] = await Promise.all([registerUser(), registerUser()]);
+    await request(app)
+      .post("/api/messages")
+      .set("Authorization", `Bearer ${alice.accessToken}`)
+      .send({ receiverId: partner.user._id, body: "hi" })
+      .expect(201);
+    const partnerSocket = connectWithToken(partner.accessToken);
+    await connected(partnerSocket);
+    const seen = presenceEvents(partnerSocket);
+
+    const tab1 = connectWithToken(alice.accessToken);
+    await connected(tab1);
+    const tab2 = connectWithToken(alice.accessToken);
+    await connected(tab2);
+    tab1.close();
+    await settle();
+    expect(seen).toEqual([{ userId: alice.user._id, online: true }]);
+  });
+});
+
+describe("admin deactivation", () => {
+  test("disconnects the user's open sockets immediately", async () => {
+    const { user, accessToken } = await registerUser();
+    const admin = await createAdmin();
+    const client = connectWithToken(accessToken);
+    await connected(client);
+    const disconnected = new Promise((resolve) => client.once("disconnect", resolve));
+    await request(app)
+      .patch(`/api/users/${user._id}/status`)
+      .set("Authorization", `Bearer ${admin.accessToken}`)
+      .send({ isActive: false })
+      .expect(200);
+    await disconnected;
+  });
+});
+
 describe("chat:message", () => {
   test("a message reaches the intended recipient only, and the sender gets an ack", async () => {
     const [alice, bob, eve] = await Promise.all([registerUser(), registerUser(), registerUser()]);
@@ -123,6 +197,20 @@ describe("chat:message", () => {
     expect((await bobReceived).body).toBe("hi bob");
     await new Promise((r) => setTimeout(r, 200));
     expect(eveReceived).toBe(false);
+  });
+
+  test("applies the same recipient rules as REST: self is a VALIDATION_ERROR, missing or deactivated is NOT_FOUND", async () => {
+    const [sender, deactivated] = await Promise.all([registerUser(), registerUser()]);
+    await User.updateOne({ _id: deactivated.user._id }, { isActive: false });
+    const socket = connectWithToken(sender.accessToken);
+    await connected(socket);
+
+    const toSelf = await emitWithAck(socket, "chat:message", { receiverId: sender.user._id, body: "me" });
+    expect(toSelf.error.code).toBe("VALIDATION_ERROR");
+    for (const receiverId of ["507f1f77bcf86cd799439011", deactivated.user._id]) {
+      const ack = await emitWithAck(socket, "chat:message", { receiverId, body: "x" });
+      expect(ack).toEqual({ ok: false, error: { code: "NOT_FOUND", message: "Recipient not found" } });
+    }
   });
 });
 

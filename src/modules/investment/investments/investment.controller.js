@@ -16,7 +16,7 @@ const listForMyStartup = asyncHandler(async (req, res) => {
 });
 
 const refund = asyncHandler(async (req, res) => {
-  const investment = await investmentService.refund(req.params.id, req.user.id, req.user.role);
+  const investment = await investmentService.refund(req.params.id);
   ok(res, investment, "Investment refunded");
 });
 

@@ -15,8 +15,13 @@ async function getMine(ownerId) {
   return investor;
 }
 
+// What other users may see. Investment criteria (ticket sizes, target
+// industries/stages/locations) are the investor's private deal filter; the
+// owner reads them through GET /investors/me.
+const PUBLIC_FIELDS = "-criteria";
+
 async function getById(id) {
-  const investor = await Investor.findById(id);
+  const investor = await Investor.findById(id).select(PUBLIC_FIELDS);
   if (!investor) throw new NotFoundError("Investor not found");
   return investor;
 }

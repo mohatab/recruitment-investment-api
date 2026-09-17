@@ -19,6 +19,7 @@ router.use(authenticate);
  *       content: { application/json: { schema: { $ref: '#/components/schemas/ExperienceInput' } } }
  *     responses:
  *       201: { description: Created }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.post("/", validate(schemas.create), controller.create);
 
@@ -31,6 +32,7 @@ router.post("/", validate(schemas.create), controller.create);
  *     security: [{ BearerAuth: [] }]
  *     responses:
  *       200: { description: OK }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.get("/", controller.listMine);
 
@@ -49,6 +51,7 @@ router.get("/", controller.listMine);
  *     responses:
  *       200: { description: Deleted }
  *       403: { $ref: '#/components/responses/Forbidden' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.delete("/:id", controller.remove);
 

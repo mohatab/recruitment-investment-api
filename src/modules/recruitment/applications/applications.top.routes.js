@@ -17,8 +17,11 @@ router.use(authenticate);
  *     tags: [Applications]
  *     summary: List the current candidate's own applications
  *     security: [{ BearerAuth: [] }]
+ *     x-required-roles: [candidate]
  *     responses:
  *       200: { description: OK }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
  */
 router.get("/mine", authorize(ROLES.CANDIDATE), controller.listMine);
 
@@ -29,6 +32,7 @@ router.get("/mine", authorize(ROLES.CANDIDATE), controller.listMine);
  *     tags: [Applications]
  *     summary: Move an application to the next status in its lifecycle (owning recruiter only)
  *     security: [{ BearerAuth: [] }]
+ *     x-required-roles: [recruiter]
  *     parameters:
  *       - in: path
  *         name: id
@@ -43,6 +47,7 @@ router.get("/mine", authorize(ROLES.CANDIDATE), controller.listMine);
  *       200: { description: Updated }
  *       400: { description: Invalid status transition }
  *       403: { $ref: '#/components/responses/Forbidden' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.patch("/:id/status", authorize(ROLES.RECRUITER), validate(schemas.updateStatus), controller.updateStatus);
 

@@ -8,7 +8,7 @@ const options = {
       title: "Recruitment & Investment Platform API",
       version: "2.0.0",
       description:
-        "Every response carries an X-Request-Id header. Malformed JSON bodies return 400 INVALID_JSON, oversized bodies 413 PAYLOAD_TOO_LARGE, and rate-limited requests 429 TOO_MANY_REQUESTS, all using the Error schema. Job recruitment (postings, applications, CVs) combined with an investor/startup investment platform, real-time notifications, and messaging.",
+        "Authorization: 401 means no valid session; 403 means authenticated but not allowed (wrong role, not the resource owner, or unverified email). Roles are read from the stored user, never from the token or request. Protected operations list their roles in x-required-roles. Every response carries an X-Request-Id header. Malformed JSON bodies return 400 INVALID_JSON, oversized bodies 413 PAYLOAD_TOO_LARGE, and rate-limited requests 429 TOO_MANY_REQUESTS, all using the Error schema. Job recruitment (postings, applications, CVs) combined with an investor/startup investment platform, real-time notifications, and messaging.",
     },
     servers: [{ url: env.baseUrl, description: "Current environment" }],
     components: {
@@ -197,11 +197,13 @@ const options = {
           content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
         },
         Unauthorized: {
-          description: "Missing or invalid authentication token",
+          description:
+            "UNAUTHORIZED — no session: missing, malformed, expired or revoked access token, or a deactivated account",
           content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
         },
         Forbidden: {
-          description: "Authenticated but not permitted",
+          description:
+            "Authenticated but not allowed: FORBIDDEN (role not in x-required-roles, or not the owner of the resource) or EMAIL_NOT_VERIFIED",
           content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
         },
         NotFound: {
@@ -218,7 +220,8 @@ const options = {
         },
       },
     },
-    security: [{ BearerAuth: [] }],
+    // No global default: every operation declares `security` explicitly
+    // (enforced by test/unit/swagger-contract.test.js).
   },
   apis: ["./src/modules/**/*.routes.js", "./src/modules/health/*.js"],
 };

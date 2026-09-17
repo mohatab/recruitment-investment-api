@@ -17,6 +17,7 @@ router.use(authenticate);
  *     security: [{ BearerAuth: [] }]
  *     responses:
  *       200: { description: OK }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.get("/", controller.listMine);
 
@@ -35,6 +36,7 @@ router.get("/", controller.listMine);
  *     responses:
  *       200: { description: Updated }
  *       403: { $ref: '#/components/responses/Forbidden' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.patch("/:id/read", controller.markRead);
 
@@ -45,6 +47,7 @@ router.patch("/:id/read", controller.markRead);
  *     tags: [Notifications]
  *     summary: Manually send a notification to a user or role (admin only)
  *     security: [{ BearerAuth: [] }]
+ *     x-required-roles: [admin]
  *     requestBody:
  *       required: true
  *       content:
@@ -53,6 +56,7 @@ router.patch("/:id/read", controller.markRead);
  *     responses:
  *       200: { description: Sent }
  *       403: { $ref: '#/components/responses/Forbidden' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.post("/broadcast", authorize(ROLES.ADMIN), validate(schemas.broadcast), controller.broadcast);
 

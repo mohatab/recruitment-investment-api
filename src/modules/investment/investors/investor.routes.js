@@ -14,11 +14,14 @@ const router = express.Router();
  *     tags: [Investors]
  *     summary: Create or update the current user's investor profile + investment criteria (investor role only)
  *     security: [{ BearerAuth: [] }]
+ *     x-required-roles: [investor]
  *     requestBody:
  *       required: true
  *       content: { application/json: { schema: { $ref: '#/components/schemas/InvestorInput' } } }
  *     responses:
  *       200: { description: Saved }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
  */
 router.put("/me", authenticate, authorize(ROLES.INVESTOR), validate(schemas.upsert), controller.upsertMine);
 
@@ -29,9 +32,12 @@ router.put("/me", authenticate, authorize(ROLES.INVESTOR), validate(schemas.upse
  *     tags: [Investors]
  *     summary: Get the current user's own investor profile
  *     security: [{ BearerAuth: [] }]
+ *     x-required-roles: [investor]
  *     responses:
  *       200: { description: OK }
  *       404: { $ref: '#/components/responses/NotFound' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
  */
 router.get("/me", authenticate, authorize(ROLES.INVESTOR), controller.getMine);
 
@@ -50,6 +56,7 @@ router.get("/me", authenticate, authorize(ROLES.INVESTOR), controller.getMine);
  *     responses:
  *       200: { description: OK }
  *       404: { $ref: '#/components/responses/NotFound' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.get("/:id", authenticate, controller.getById);
 

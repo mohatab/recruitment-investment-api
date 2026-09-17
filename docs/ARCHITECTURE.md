@@ -106,13 +106,18 @@ sequenceDiagram
 
 ## Authorization
 
-`req.user.role` comes from the stored user loaded by `authenticate` — never
-from a request body or query string. `authorize(...roles)` is a route-level
-gate and `requireVerifiedEmail` gates job posting and investments; ownership
-checks (`assertOwnership`, inline `String(x.owner) !== String(userId)`
-comparisons) live in each service function, right next to the query they
-protect, so the check can't be bypassed by hitting the service through a
-different route.
+Four layers, each a single place in the code: `authenticate` (session, 401),
+`authorize(...roles)` (stored role, 403), `requireVerifiedEmail` (403), and
+resource checks in services — `assertOwner` (`common/utils/assertOwner.js`) or
+a query filter scoped to the caller (e.g. `{ investor: req.user.id }`,
+conditional updates whose filter _is_ the rule, as in notification
+`markRead`). Ownership fields are never accepted from the request; services
+set them from `req.user`.
+
+The per-route policy is declared in the OpenAPI spec (`security`,
+`x-required-roles`, `x-requires-verified-email`) and enforced in both
+directions by tests (contract test against the routers, matrix test against
+the running app). The full rule table is in [SECURITY.md](./SECURITY.md#authorization).
 
 ## Real-time (Socket.IO)
 
@@ -147,6 +152,10 @@ connect time — never from an event payload. There is no event that takes a
 raw room name or another user's id and joins the caller to it. This is the
 direct fix for the original codebase's vulnerability (`AUDIT.md` #6/#7):
 `joinUserRoom` there trusted a client-supplied `userId`.
+
+Presence events go only to the user's conversation partners
+(`message.service.conversationPartners`), and only on real transitions (first
+socket online, last socket offline).
 
 Presence (`realtime/presence.js`) is an in-memory `Map`, not a persisted
 collection — it's ephemeral by nature and doesn't need to survive a

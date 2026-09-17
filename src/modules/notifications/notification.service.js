@@ -1,42 +1,72 @@
 const Notification = require("./notification.model");
+const User = require("../users/user.model");
 const { getIO } = require("../../realtime/ioRegistry");
 const { NotFoundError, ForbiddenError } = require("../../common/errors/AppError");
 const { parsePagination, buildMeta } = require("../../common/utils/pagination");
 
+// What a given user sees: `read` is per user for role broadcasts, and the list
+// of other readers (readBy) is never exposed.
+function toView(notification, userId) {
+  const { readBy = [], ...rest } = notification.toObject ? notification.toObject() : notification;
+  const read = rest.user ? rest.read : readBy.some((id) => String(id) === String(userId));
+  delete rest.__v;
+  return { ...rest, read };
+}
+
 async function notifyUser(userId, message) {
   const notification = await Notification.create({ message, user: userId });
-  getIO()?.to(`user_${userId}`).emit("notification", notification);
-  return notification;
+  getIO()?.to(`user_${userId}`).emit("notification", toView(notification, userId));
+  return toView(notification, userId);
 }
 
 async function notifyRole(role, message) {
   const notification = await Notification.create({ message, targetRole: role });
-  getIO()?.to(`role_${role}`).emit("notification", notification);
-  return notification;
+  getIO()?.to(`role_${role}`).emit("notification", toView(notification));
+  return toView(notification);
 }
 
-async function listMine(userId, role, query) {
+// Admin endpoint: unlike internal callers, the target comes from the request.
+async function send({ message, userId, targetRole }) {
+  if (targetRole) return notifyRole(targetRole, message);
+  if (!(await User.exists({ _id: userId }))) throw new NotFoundError("User not found");
+  return notifyUser(userId, message);
+}
+
+async function listMine(user, query) {
   const { page, limit, skip, sort } = parsePagination(query);
-  // A user sees notifications addressed to them personally, plus broadcasts
-  // for their role — never anyone else's.
-  const filter = { $or: [{ user: userId }, { targetRole: role }] };
+  // Notifications addressed to the user personally, plus broadcasts for their
+  // role (from the stored user, see authenticate) — never anyone else's.
+  const filter = { $or: [{ user: user.id }, { user: null, targetRole: user.role }] };
 
   const [items, total] = await Promise.all([
-    Notification.find(filter).sort(sort).skip(skip).limit(limit),
+    Notification.find(filter).sort(sort).skip(skip).limit(limit).lean(),
     Notification.countDocuments(filter),
   ]);
-  return { items, meta: buildMeta({ page, limit, total }) };
+  return { items: items.map((n) => toView(n, user.id)), meta: buildMeta({ page, limit, total }) };
 }
 
-async function markRead(notificationId, userId) {
-  const notification = await Notification.findById(notificationId);
-  if (!notification) throw new NotFoundError("Notification not found");
-  if (notification.user && String(notification.user) !== String(userId)) {
+// Each branch is a single conditional update whose filter *is* the
+// authorization rule: personal -> recipient only; broadcast -> members of the
+// target role, recorded per user.
+async function markRead(notificationId, user) {
+  const personal = await Notification.findOneAndUpdate(
+    { _id: notificationId, user: user.id },
+    { read: true },
+    { new: true }
+  );
+  if (personal) return toView(personal, user.id);
+
+  const broadcast = await Notification.findOneAndUpdate(
+    { _id: notificationId, user: null, targetRole: user.role },
+    { $addToSet: { readBy: user.id } },
+    { new: true }
+  );
+  if (broadcast) return toView(broadcast, user.id);
+
+  if (await Notification.exists({ _id: notificationId })) {
     throw new ForbiddenError("You can only update your own notifications");
   }
-  notification.read = true;
-  await notification.save();
-  return notification;
+  throw new NotFoundError("Notification not found");
 }
 
-module.exports = { notifyUser, notifyRole, listMine, markRead };
+module.exports = { notifyUser, notifyRole, send, listMine, markRead };

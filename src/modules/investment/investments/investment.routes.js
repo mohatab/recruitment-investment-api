@@ -15,6 +15,8 @@ router.use(authenticate);
  *     tags: [Investments]
  *     summary: Start an investment (creates a Stripe PaymentIntent; confirm client-side with the returned clientSecret)
  *     security: [{ BearerAuth: [] }]
+ *     x-required-roles: [investor]
+ *     x-requires-verified-email: true
  *     requestBody:
  *       required: true
  *       content:
@@ -24,6 +26,7 @@ router.use(authenticate);
  *       201: { description: Created }
  *       400: { description: Amount below the startup's minimum investment }
  *       403: { description: "FORBIDDEN (not an investor) or EMAIL_NOT_VERIFIED" }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.post("/", authorize(ROLES.INVESTOR), requireVerifiedEmail, validate(schemas.create), controller.create);
 
@@ -34,8 +37,11 @@ router.post("/", authorize(ROLES.INVESTOR), requireVerifiedEmail, validate(schem
  *     tags: [Investments]
  *     summary: List the current investor's own investments
  *     security: [{ BearerAuth: [] }]
+ *     x-required-roles: [investor]
  *     responses:
  *       200: { description: OK }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
  */
 router.get("/mine", authorize(ROLES.INVESTOR), controller.listMine);
 
@@ -46,8 +52,11 @@ router.get("/mine", authorize(ROLES.INVESTOR), controller.listMine);
  *     tags: [Investments]
  *     summary: List investments received by the current user's startup
  *     security: [{ BearerAuth: [] }]
+ *     x-required-roles: [startup]
  *     responses:
  *       200: { description: OK }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
  */
 router.get("/startup", authorize(ROLES.STARTUP), controller.listForMyStartup);
 
@@ -56,8 +65,9 @@ router.get("/startup", authorize(ROLES.STARTUP), controller.listForMyStartup);
  * /api/investments/{id}/refund:
  *   post:
  *     tags: [Investments]
- *     summary: Refund a paid investment (the investor who made it, or an admin)
+ *     summary: Refund a paid investment (admin only — investors cannot reclaim money already credited to a startup)
  *     security: [{ BearerAuth: [] }]
+ *     x-required-roles: [admin]
  *     parameters:
  *       - in: path
  *         name: id
@@ -66,7 +76,9 @@ router.get("/startup", authorize(ROLES.STARTUP), controller.listForMyStartup);
  *     responses:
  *       200: { description: Refunded }
  *       400: { description: Only a paid investment can be refunded }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
  */
-router.post("/:id/refund", controller.refund);
+router.post("/:id/refund", authorize(ROLES.ADMIN), controller.refund);
 
 module.exports = router;

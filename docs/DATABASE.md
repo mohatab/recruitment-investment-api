@@ -8,20 +8,20 @@ drag the whole history along with it).
 
 ## Collections
 
-| Collection     | Purpose                                          | Owner reference                        |
-| -------------- | ------------------------------------------------ | -------------------------------------- |
-| `User`         | Single identity source for every role            | —                                      |
-| `RefreshToken` | Hashed, rotating session tokens                  | `user`                                 |
-| `AuthToken`    | Hashed one-time email tokens (reset, verify)     | `user`                                 |
-| `Job`          | Recruiter's job posting                          | `recruiter` → User                     |
-| `Application`  | A candidate's application to a job               | `job` → Job, `applicant` → User        |
-| `Startup`      | One fundraising profile per startup account      | `owner` → User (unique)                |
-| `Investor`     | One profile + criteria per investor account      | `owner` → User (unique)                |
-| `Investment`   | A Stripe-backed investment                       | `investor` → User, `startup` → Startup |
-| `Experience`   | A candidate's work-history entry                 | `user` → User                          |
-| `Notification` | In-app notification (personal or role-broadcast) | `user` → User (nullable)               |
-| `Message`      | A direct message                                 | `sender`/`receiver` → User             |
-| `Contact`      | Public contact-form submission                   | — (no account required)                |
+| Collection     | Purpose                                                                            | Owner reference                        |
+| -------------- | ---------------------------------------------------------------------------------- | -------------------------------------- |
+| `User`         | Single identity source for every role                                              | —                                      |
+| `RefreshToken` | Hashed, rotating session tokens                                                    | `user`                                 |
+| `AuthToken`    | Hashed one-time email tokens (reset, verify)                                       | `user`                                 |
+| `Job`          | Recruiter's job posting                                                            | `recruiter` → User                     |
+| `Application`  | A candidate's application to a job                                                 | `job` → Job, `applicant` → User        |
+| `Startup`      | One fundraising profile per startup account                                        | `owner` → User (unique)                |
+| `Investor`     | One profile + criteria per investor account                                        | `owner` → User (unique)                |
+| `Investment`   | A Stripe-backed investment                                                         | `investor` → User, `startup` → Startup |
+| `Experience`   | A candidate's work-history entry                                                   | `user` → User                          |
+| `Notification` | In-app notification (personal or role-broadcast; per-user `readBy` for broadcasts) | `user` → User (nullable)               |
+| `Message`      | A direct message                                                                   | `sender`/`receiver` → User             |
+| `Contact`      | Public contact-form submission                                                     | — (no account required)                |
 
 ## Why one `User` model
 

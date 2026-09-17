@@ -7,16 +7,23 @@
 // adapter) if/when this is horizontally scaled.
 const onlineUsers = new Map(); // userId -> Set<socketId>
 
+// Both return true only on a real transition (first socket online, last
+// socket gone), so a second tab doesn't announce "online" twice or "offline"
+// while another tab is still connected.
 function markOnline(userId, socketId) {
   if (!onlineUsers.has(userId)) onlineUsers.set(userId, new Set());
-  onlineUsers.get(userId).add(socketId);
+  const sockets = onlineUsers.get(userId);
+  sockets.add(socketId);
+  return sockets.size === 1;
 }
 
 function markOffline(userId, socketId) {
   const sockets = onlineUsers.get(userId);
-  if (!sockets) return;
+  if (!sockets) return false;
   sockets.delete(socketId);
-  if (sockets.size === 0) onlineUsers.delete(userId);
+  if (sockets.size > 0) return false;
+  onlineUsers.delete(userId);
+  return true;
 }
 
 module.exports = { onlineUsers, markOnline, markOffline };

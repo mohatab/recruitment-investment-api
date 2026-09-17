@@ -53,22 +53,74 @@ so it can be checked directly.
 
 ## Authorization
 
-- **Role is read from the stored user** on every request
-  (`auth.service.authenticateAccessToken`) — never from a request body or
-  query string, and a role change applies immediately rather than when the
-  token expires.
-- **Ownership checks live in the service layer**, next to the query they
-  protect (`assertOwnership` in job/startup services, inline comparisons
-  elsewhere) — e.g. a recruiter can only edit/delete their own job
-  postings, only a job's owning recruiter can see or advance its
-  applications, only a startup's owner sees the investments it received.
-- **IDOR/BOLA**: every resource that shouldn't be publicly readable is
-  checked against `req.user.id`, not just gated behind "any authenticated
-  user." `GET /api/users/:id` specifically returns a **limited** projection
-  (name, role — not phone/email/birthdate) precisely because "authenticated"
-  and "authorized to see this person's private details" aren't the same
-  thing — that was a real gap found and fixed during review, not a
-  hypothetical.
+### Layers, in the order they run
+
+| Layer          | Where                                                                                                                           | Failure                                     |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| Session        | `authenticate` → `auth.service.authenticateAccessToken`: JWT signature/expiry, user exists, active, `ver` = `User.tokenVersion` | `401 UNAUTHORIZED`                          |
+| Role           | `authorize(...roles)` against the **stored** role (never the JWT `role` claim or the request)                                   | `403 FORBIDDEN`                             |
+| Verified email | `requireVerifiedEmail` (job posting, investments)                                                                               | `403 EMAIL_NOT_VERIFIED`                    |
+| Input          | Joi `validate()` with `stripUnknown` — ownership/state fields can't be sent                                                     | `400 VALIDATION_ERROR`                      |
+| Resource       | Services: `assertOwner` (`common/utils/assertOwner.js`) or a query filter scoped to `req.user`                                  | `403 FORBIDDEN` (exists, not yours) / `404` |
+
+401 always means "no valid session"; 403 means "valid session, not allowed".
+Admin is **not** a superuser: admin can do only the operations listed below.
+
+### Rules per resource
+
+| Resource                                | Who                          | Rule                                                                                                            |
+| --------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Own profile `/users/me*`                | any authenticated            | self only; `role`, `email`, `isActive`, verification and `tokenVersion` are not writable                        |
+| `GET /users/:id`                        | any authenticated            | public projection only (name, role, createdAt)                                                                  |
+| `GET /users`, `PATCH /users/:id/status` | admin                        | an admin cannot change their own status                                                                         |
+| Jobs create                             | recruiter, verified email    | `recruiter` = caller                                                                                            |
+| Jobs update/delete                      | recruiter                    | owner of the job only                                                                                           |
+| Apply to a job                          | candidate                    | `applicant` = caller; status always starts at `submitted`                                                       |
+| Applications of a job / change status   | recruiter                    | owner of the job only (a deleted job owns nothing)                                                              |
+| `GET /applications/mine`                | candidate                    | caller's applications only                                                                                      |
+| Startup profile `/startups/me`          | startup                      | one profile, `owner` = caller; `raisedSoFar` not writable                                                       |
+| Investor profile `/investors/me`        | investor                     | `owner` = caller                                                                                                |
+| `GET /investors/:id`                    | any authenticated            | public projection: **criteria are private** to the owner                                                        |
+| `GET /startups/matches`                 | investor                     | against the caller's own criteria                                                                               |
+| Create investment                       | investor, verified email     | `investor` = caller; status always `pending`                                                                    |
+| `GET /investments/mine` / `/startup`    | investor / startup           | caller's own / caller's startup's only                                                                          |
+| Refund                                  | **admin only** (decision D3) | investors can't reclaim money credited to a startup                                                             |
+| Notifications list                      | any authenticated            | personal (`user` = caller) + broadcasts to the caller's role                                                    |
+| Mark notification read                  | recipient                    | personal: recipient only; role broadcast: members of that role, recorded **per user** (`readBy`, never exposed) |
+| Send notification                       | admin                        | direct target must exist                                                                                        |
+| Messages send                           | any authenticated            | `sender` = caller; recipient must be another active user                                                        |
+| Message history / conversations         | any authenticated            | room derived from the caller + the other user id                                                                |
+| Experience                              | any authenticated            | `user` = caller; delete by owner only                                                                           |
+| Stripe webhook                          | Stripe signature             | no user                                                                                                         |
+
+### Socket.IO (same rules as REST)
+
+- Handshake: the same session check as HTTP; deactivation, logout-all,
+  password change/reset and token expiry disconnect open sockets.
+- `chat:message` calls the same service and schema as `POST /api/messages`
+  (sender = session user, same recipient rules, same error codes in the ack).
+- Rooms are derived from the session only: `user_<id>` (personal delivery),
+  `role_<role>` (admin role broadcasts, the same audience as
+  `GET /notifications`). No event lets a client join a room.
+- Presence (online/offline) is sent only to users who share a conversation
+  with the user — the same audience that sees `isOnline` in
+  `GET /api/messages/conversations`.
+
+### How it's enforced by tests
+
+- The OpenAPI spec is the declared policy: every operation states `security`,
+  and role-restricted ones `x-required-roles` (plus
+  `x-requires-verified-email`). `test/unit/swagger-contract.test.js` checks
+  the routers declare exactly that middleware.
+- `test/integration/authorization-matrix.test.js` enumerates every route from
+  the real routers and checks the **running app** against the documented
+  policy: 7 kinds of invalid session → 401 on every protected route; every
+  role → allowed or `403 FORBIDDEN` per route; a validly signed token whose
+  `role` claim says admin is still refused; unverified users →
+  `EMAIL_NOT_VERIFIED`; public routes never 401/403.
+- `test/integration/authorization-ownership.test.js` covers cross-user
+  access (IDOR/BOLA) and client-supplied ownership/role/state fields for
+  every resource above.
 
 ## Input handling
 
@@ -135,6 +187,8 @@ so it can be checked directly.
   `test/integration/socket.test.js` covers malformed payloads and failing
   handlers; `server-lifecycle.test.js` sends malformed events to the real
   `node src/server.js` process and asserts it stays up.
+- Presence is sent only to conversation partners (it used to go to every user
+  with the same role).
 - Every room a socket can join (`user_<id>`, `role_<role>`) is derived from
   its own verified identity at connect time, never from an event payload —
   there is no event that takes another user's id and joins the caller to

@@ -53,6 +53,19 @@ function onEvent(socket, event, schema, handler) {
   });
 }
 
+// Online status goes only to users who share a conversation with this user —
+// the same audience that sees isOnline in GET /api/messages/conversations.
+// (It used to go to every user with the same role.) Fire-and-forget, so a
+// failed lookup is logged rather than escaping the connection handler.
+function announcePresence(io, userId, online) {
+  messageService
+    .conversationPartners(userId)
+    .then((partners) => {
+      if (partners.length) io.to(partners.map((id) => `user_${id}`)).emit("presence", { userId, online });
+    })
+    .catch((err) => logger.error("Presence broadcast failed", { userId, error: err.message }));
+}
+
 function initSocket(io) {
   io.use(authenticateSocket);
 
@@ -64,9 +77,8 @@ function initSocket(io) {
     expiry.unref();
 
     socket.join(`user_${userId}`);
-    socket.join(`role_${role}`);
-    markOnline(userId, socket.id);
-    io.to(`role_${role}`).emit("presence", { userId, online: true });
+    socket.join(`role_${role}`); // receives admin broadcasts for this role (same audience as GET /notifications)
+    if (markOnline(userId, socket.id)) announcePresence(io, userId, true);
 
     // Same service and schema as POST /api/messages; delivery to the
     // recipient's user_<id> room happens inside the service.
@@ -76,8 +88,7 @@ function initSocket(io) {
 
     socket.on("disconnect", () => {
       clearTimeout(expiry);
-      markOffline(userId, socket.id);
-      io.to(`role_${role}`).emit("presence", { userId, online: false });
+      if (markOffline(userId, socket.id)) announcePresence(io, userId, false);
     });
   });
 }

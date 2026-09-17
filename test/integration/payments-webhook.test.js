@@ -13,7 +13,8 @@ jest.mock("../../src/modules/payments/stripe.service", () => ({
   }),
 }));
 
-const { app, request, registerUser } = require("../helpers");
+const { app, request, registerUser, createAdmin } = require("../helpers");
+const Startup = require("../../src/modules/investment/startups/startup.model");
 
 async function setupInvestment(amount = 200) {
   const startupOwner = await registerUser({ role: "startup" });
@@ -90,28 +91,27 @@ describe("Stripe webhook", () => {
     expect(res.status).toBe(200);
   });
 
-  test("only a paid investment can be refunded, and only by its own investor", async () => {
-    const { investment, investor } = await setupInvestment(200);
-    const outsider = await registerUser({ role: "investor" });
+  test("refunds are admin-only (D3): the investor cannot reclaim a paid investment; an admin can, once it is paid", async () => {
+    const { investment, investor, startupId, startupOwner } = await setupInvestment(200);
+    const admin = await createAdmin();
+    const refund = (token) =>
+      request(app).post(`/api/investments/${investment._id}/refund`).set("Authorization", `Bearer ${token}`);
 
     // still "pending" — never confirmed by a webhook
-    const tooEarly = await request(app)
-      .post(`/api/investments/${investment._id}/refund`)
-      .set("Authorization", `Bearer ${investor.accessToken}`);
-    expect(tooEarly.status).toBe(400);
+    expect((await refund(admin.accessToken)).status).toBe(400);
 
     await sendWebhook({ type: "payment_intent.succeeded", data: { object: { id: investment.stripePaymentIntentId } } });
 
-    const wrongInvestor = await request(app)
-      .post(`/api/investments/${investment._id}/refund`)
-      .set("Authorization", `Bearer ${outsider.accessToken}`);
-    expect(wrongInvestor.status).toBe(403);
+    for (const who of [investor, startupOwner]) {
+      const res = await refund(who.accessToken);
+      expect(res.status).toBe(403);
+      expect(res.body.error.code).toBe("FORBIDDEN");
+    }
+    expect((await Startup.findById(startupId)).raisedSoFar).toBe(200); // nothing reclaimed
 
-    const owner = await request(app)
-      .post(`/api/investments/${investment._id}/refund`)
-      .set("Authorization", `Bearer ${investor.accessToken}`);
-    expect(owner.status).toBe(200);
-    expect(owner.body.data.status).toBe("refunded");
+    const byAdmin = await refund(admin.accessToken);
+    expect(byAdmin.status).toBe(200);
+    expect(byAdmin.body.data.status).toBe("refunded");
   });
 
   test("GET /api/investments/startup lists investments received by the current user's startup, with investor details populated", async () => {

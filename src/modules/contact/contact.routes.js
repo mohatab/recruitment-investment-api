@@ -12,6 +12,7 @@ const router = express.Router();
  *   post:
  *     tags: [Contact]
  *     summary: Submit the public contact form (optionally with a profile image)
+ *     security: []
  *     requestBody:
  *       required: true
  *       content:

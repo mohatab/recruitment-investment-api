@@ -14,6 +14,7 @@ const router = express.Router();
  *   get:
  *     tags: [Jobs]
  *     summary: Search/list open jobs
+ *     security: []
  *     parameters:
  *       - in: query
  *         name: search
@@ -47,6 +48,7 @@ router.get("/", validate(schemas.list, "query"), controller.list);
  *   get:
  *     tags: [Jobs]
  *     summary: Get a job by id
+ *     security: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -65,6 +67,8 @@ router.get("/:id", controller.getById);
  *     tags: [Jobs]
  *     summary: Create a job posting (recruiters only)
  *     security: [{ BearerAuth: [] }]
+ *     x-required-roles: [recruiter]
+ *     x-requires-verified-email: true
  *     requestBody:
  *       required: true
  *       content: { application/json: { schema: { $ref: '#/components/schemas/JobInput' } } }
@@ -72,6 +76,7 @@ router.get("/:id", controller.getById);
  *       201: { description: Created }
  *       400: { $ref: '#/components/responses/ValidationError' }
  *       403: { description: "FORBIDDEN (not a recruiter) or EMAIL_NOT_VERIFIED" }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.post(
   "/",
@@ -89,6 +94,7 @@ router.post(
  *     tags: [Jobs]
  *     summary: Update a job posting (owning recruiter only)
  *     security: [{ BearerAuth: [] }]
+ *     x-required-roles: [recruiter]
  *     parameters:
  *       - in: path
  *         name: id
@@ -98,6 +104,7 @@ router.post(
  *       200: { description: Updated }
  *       403: { $ref: '#/components/responses/Forbidden' }
  *       404: { $ref: '#/components/responses/NotFound' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.patch("/:id", authenticate, authorize(ROLES.RECRUITER), validate(schemas.update), controller.update);
 
@@ -108,6 +115,7 @@ router.patch("/:id", authenticate, authorize(ROLES.RECRUITER), validate(schemas.
  *     tags: [Jobs]
  *     summary: Delete a job posting (owning recruiter only)
  *     security: [{ BearerAuth: [] }]
+ *     x-required-roles: [recruiter]
  *     parameters:
  *       - in: path
  *         name: id
@@ -116,6 +124,7 @@ router.patch("/:id", authenticate, authorize(ROLES.RECRUITER), validate(schemas.
  *     responses:
  *       200: { description: Deleted }
  *       403: { $ref: '#/components/responses/Forbidden' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.delete("/:id", authenticate, authorize(ROLES.RECRUITER), controller.remove);
 

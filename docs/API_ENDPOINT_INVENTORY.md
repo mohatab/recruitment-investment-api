@@ -16,6 +16,8 @@ endpoint, not the generic ones (400 `VALIDATION_ERROR` on bad input, 401
 `UNAUTHORIZED` on a missing/invalid token) which apply uniformly and are
 covered once here rather than repeated for every endpoint.
 
+Authorization for every route is declared in Swagger (`security`, `x-required-roles`) and tested route by route; see [SECURITY.md](./SECURITY.md#authorization).
+
 ## Auth (`/api/auth`) — rate-limited (20/15min per IP)
 
 | Method | Path                   | Auth                  | Body                                                                            | Success                                              | Distinguishing errors                                                       | Test                                         | Swagger |
@@ -74,20 +76,20 @@ covered once here rather than repeated for every endpoint.
 
 ## Investors (`/api/investors`)
 
-| Method | Path   | Auth/Role         | Body/Params                                                                                                                                                                                     | Success          | Distinguishing errors | Test                 | Swagger |
-| ------ | ------ | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- | --------------------- | -------------------- | ------- |
-| PUT    | `/me`  | `investor`        | investorType?, aboutMe?, linkedIn?, twitter?, facebook?, website?, areasOfExpertise?, numberOfInvestments?, companies?, criteria? {minInvestment, maxInvestment, industries, stages, locations} | 200, upserted    | 403 non-investor role | `investment.test.js` | ✅      |
-| GET    | `/me`  | `investor`        | —                                                                                                                                                                                               | 200, own profile | 404 not created yet   | `investment.test.js` | ✅      |
-| GET    | `/:id` | any authenticated | —                                                                                                                                                                                               | 200              | 404                   | `investment.test.js` | ✅      |
+| Method | Path   | Auth/Role         | Body/Params                                                                                                                                                                                     | Success                                                               | Distinguishing errors | Test                                                    | Swagger |
+| ------ | ------ | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | --------------------- | ------------------------------------------------------- | ------- |
+| PUT    | `/me`  | `investor`        | investorType?, aboutMe?, linkedIn?, twitter?, facebook?, website?, areasOfExpertise?, numberOfInvestments?, companies?, criteria? {minInvestment, maxInvestment, industries, stages, locations} | 200, upserted                                                         | 403 non-investor role | `investment.test.js`                                    | ✅      |
+| GET    | `/me`  | `investor`        | —                                                                                                                                                                                               | 200, own profile                                                      | 404 not created yet   | `investment.test.js`                                    | ✅      |
+| GET    | `/:id` | any authenticated | —                                                                                                                                                                                               | 200, public profile (investment `criteria` omitted; owner uses `/me`) | 404                   | `investment.test.js`, `authorization-ownership.test.js` | ✅      |
 
 ## Investments (`/api/investments`)
 
-| Method | Path          | Auth/Role               | Body/Params                                   | Success                                       | Distinguishing errors                       | Test                       | Swagger |
-| ------ | ------------- | ----------------------- | --------------------------------------------- | --------------------------------------------- | ------------------------------------------- | -------------------------- | ------- |
-| POST   | `/`           | `investor`              | startupId, amount (≥ startup's minInvestment) | 201, `{investment, clientSecret}`             | 400 below minimum, 404 startup not found    | `payments-webhook.test.js` | ✅      |
-| GET    | `/mine`       | `investor`              | —                                             | 200, own investments, startup populated       | —                                           | `payments-webhook.test.js` | ✅      |
-| GET    | `/startup`    | `startup`               | —                                             | 200, investments received, investor populated | 404 no startup profile                      | `payments-webhook.test.js` | ✅      |
-| POST   | `/:id/refund` | own investor or `admin` | —                                             | 200, status → `refunded`, calls Stripe refund | 400 not `paid`, 403 not the owning investor | `payments-webhook.test.js` | ✅      |
+| Method | Path          | Auth/Role    | Body/Params                                   | Success                                       | Distinguishing errors                                  | Test                                                          | Swagger |
+| ------ | ------------- | ------------ | --------------------------------------------- | --------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------- | ------- |
+| POST   | `/`           | `investor`   | startupId, amount (≥ startup's minInvestment) | 201, `{investment, clientSecret}`             | 400 below minimum, 404 startup not found               | `payments-webhook.test.js`                                    | ✅      |
+| GET    | `/mine`       | `investor`   | —                                             | 200, own investments, startup populated       | —                                                      | `payments-webhook.test.js`                                    | ✅      |
+| GET    | `/startup`    | `startup`    | —                                             | 200, investments received, investor populated | 404 no startup profile                                 | `payments-webhook.test.js`                                    | ✅      |
+| POST   | `/:id/refund` | `admin` only | —                                             | 200, status → `refunded`, calls Stripe refund | 400 not `paid`, 403 non-admin (including the investor) | `payments-webhook.test.js`, `authorization-ownership.test.js` | ✅      |
 
 ## Payments (`/api/payments`) — no auth (verified by Stripe signature instead)
 
@@ -97,19 +99,19 @@ covered once here rather than repeated for every endpoint.
 
 ## Notifications (`/api/notifications`)
 
-| Method | Path         | Auth/Role                 | Body/Params                               | Success                                        | Distinguishing errors                    | Test                    | Swagger |
-| ------ | ------------ | ------------------------- | ----------------------------------------- | ---------------------------------------------- | ---------------------------------------- | ----------------------- | ------- |
-| GET    | `/`          | any authenticated         | —                                         | 200, paginated: own + own-role broadcasts only | —                                        | `notifications.test.js` | ✅      |
-| PATCH  | `/:id/read`  | owner of the notification | —                                         | 200                                            | 403 not the owner                        | `notifications.test.js` | ✅      |
-| POST   | `/broadcast` | `admin`                   | message, exactly one of userId/targetRole | 200                                            | 400 both/neither provided, 403 non-admin | `notifications.test.js` | ✅      |
+| Method | Path         | Auth/Role                                                                                    | Body/Params                                            | Success                                        | Distinguishing errors                               | Test                                                       | Swagger |
+| ------ | ------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------- | ------- |
+| GET    | `/`          | any authenticated                                                                            | —                                                      | 200, paginated: own + own-role broadcasts only | —                                                   | `notifications.test.js`                                    | ✅      |
+| PATCH  | `/:id/read`  | recipient: personal = its user; broadcast = members of the target role (per-user read state) | —                                                      | 200, `read` for the caller                     | 403 not a recipient, 404                            | `notifications.test.js`                                    | ✅      |
+| POST   | `/broadcast` | `admin`                                                                                      | message, exactly one of userId (must exist)/targetRole | 200                                            | 400 both/neither, 403 non-admin, 404 unknown userId | `notifications.test.js`, `authorization-ownership.test.js` | ✅      |
 
 ## Messaging (`/api/messages`)
 
-| Method | Path             | Auth              | Body/Params      | Success                                                                                                                        | Distinguishing errors | Test                | Swagger |
-| ------ | ---------------- | ----------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------------------- | ------------------- | ------- |
-| POST   | `/`              | any authenticated | receiverId, body | 201                                                                                                                            | —                     | `messaging.test.js` | ✅      |
-| GET    | `/conversations` | any authenticated | —                | 200, list of conversations with last message + online status                                                                   | —                     | `messaging.test.js` | ✅      |
-| GET    | `/:userId`       | any authenticated | —                | 200, message history with that user (room derived from both real ids server-side — cannot address another pair's conversation) | —                     | `messaging.test.js` | ✅      |
+| Method | Path             | Auth              | Body/Params      | Success                                                                                                                        | Distinguishing errors                             | Test                                                   | Swagger |
+| ------ | ---------------- | ----------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------ | ------- |
+| POST   | `/`              | any authenticated | receiverId, body | 201; sender = caller                                                                                                           | 400 to self, 404 unknown or deactivated recipient | `messaging.test.js`, `authorization-ownership.test.js` | ✅      |
+| GET    | `/conversations` | any authenticated | —                | 200, list of conversations with last message + online status                                                                   | —                                                 | `messaging.test.js`                                    | ✅      |
+| GET    | `/:userId`       | any authenticated | —                | 200, message history with that user (room derived from both real ids server-side — cannot address another pair's conversation) | —                                                 | `messaging.test.js`                                    | ✅      |
 
 Socket.IO events (`chat:message`, payload validated with the same schema as `POST /`; ack `{ ok, data }` or `{ ok: false, error }`) are covered separately in `socket.test.js`
 — see [ARCHITECTURE.md](./ARCHITECTURE.md#real-time-socketio); they aren't
