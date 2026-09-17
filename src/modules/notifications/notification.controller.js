@@ -1,10 +1,10 @@
 const notificationService = require("./notification.service");
 const asyncHandler = require("../../common/utils/asyncHandler");
-const { ok } = require("../../common/utils/response");
+const { ok, paginated } = require("../../common/utils/response");
 
 const listMine = asyncHandler(async (req, res) => {
   const { items, meta } = await notificationService.listMine(req.user.id, req.user.role, req.query);
-  res.status(200).json({ success: true, data: items, meta, message: "OK" });
+  paginated(res, items, meta);
 });
 
 const markRead = asyncHandler(async (req, res) => {

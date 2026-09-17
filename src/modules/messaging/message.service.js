@@ -11,7 +11,10 @@ async function send(senderId, receiverId, body) {
     body,
     delivered: onlineUsers.has(String(receiverId)),
   });
-  getIO()?.to(roomId).emit("message", message);
+  // Delivered to the recipient's own room, not the shared conversation
+  // room — see src/realtime/socket.js for why (nothing auto-joins that
+  // room, so emitting there would silently deliver to no one).
+  getIO()?.to(`user_${receiverId}`).emit("message", message);
   return message;
 }
 

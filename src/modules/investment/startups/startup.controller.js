@@ -1,6 +1,6 @@
 const startupService = require("./startup.service");
 const asyncHandler = require("../../../common/utils/asyncHandler");
-const { ok } = require("../../../common/utils/response");
+const { ok, paginated } = require("../../../common/utils/response");
 
 const upsertMine = asyncHandler(async (req, res) => {
   const startup = await startupService.upsertMine(req.user.id, req.body);
@@ -19,7 +19,7 @@ const getById = asyncHandler(async (req, res) => {
 
 const list = asyncHandler(async (req, res) => {
   const { items, meta } = await startupService.list(req.query);
-  res.status(200).json({ success: true, data: items, meta, message: "OK" });
+  paginated(res, items, meta);
 });
 
 const matches = asyncHandler(async (req, res) => {

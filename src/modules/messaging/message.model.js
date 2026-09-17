@@ -4,13 +4,17 @@ const messageSchema = new mongoose.Schema(
   {
     sender: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     receiver: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    roomId: { type: String, required: true, index: true },
+    roomId: { type: String, required: true },
     body: { type: String, required: true, trim: true, minlength: 1 },
     delivered: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
 
+// Every query filters on roomId, most also sort by createdAt — this single
+// compound index serves both (its roomId-only prefix also covers a
+// roomId-alone query), so a separate single-field index on roomId would be
+// pure write overhead with no query it uniquely serves.
 messageSchema.index({ roomId: 1, createdAt: 1 });
 
 // Deterministic room id for a pair of users, independent of who's "sender"

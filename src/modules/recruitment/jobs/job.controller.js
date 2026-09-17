@@ -1,6 +1,6 @@
 const jobService = require("./job.service");
 const asyncHandler = require("../../../common/utils/asyncHandler");
-const { ok, created } = require("../../../common/utils/response");
+const { ok, created, paginated } = require("../../../common/utils/response");
 
 const create = asyncHandler(async (req, res) => {
   const job = await jobService.create(req.user.id, req.body);
@@ -9,7 +9,7 @@ const create = asyncHandler(async (req, res) => {
 
 const list = asyncHandler(async (req, res) => {
   const { items, meta } = await jobService.list(req.query);
-  res.status(200).json({ success: true, data: items, meta, message: "OK" });
+  paginated(res, items, meta);
 });
 
 const getById = asyncHandler(async (req, res) => {

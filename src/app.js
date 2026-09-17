@@ -30,6 +30,10 @@ const app = express();
 app.set("trust proxy", 1);
 app.use(requestId);
 app.use(helmet());
+// A wildcard origin is only safe here because auth is a bearer token in an
+// Authorization header, never a cookie — `credentials: true` is never set,
+// so this doesn't expose cookie-authenticated responses to arbitrary sites.
+// Set CORS_ORIGIN to a real allowlist for a deployment that adds cookies.
 app.use(cors({ origin: env.corsOrigin }));
 
 // Stripe webhook signatures are computed over the raw body, so this route

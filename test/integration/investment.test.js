@@ -34,6 +34,22 @@ describe("startup profiles", () => {
     const publicGet = await request(app).get(`/api/startups/${putRes.body.data._id}`);
     expect(publicGet.status).toBe(200);
   });
+
+  test("GET /api/startups lists/browses startups publicly, filterable by industry and stage", async () => {
+    const { accessToken } = await registerUser({ role: "startup" });
+    await request(app).put("/api/startups/me").set("Authorization", `Bearer ${accessToken}`).send(validStartup);
+
+    const all = await request(app).get("/api/startups");
+    expect(all.status).toBe(200);
+    expect(all.body.data.length).toBeGreaterThan(0);
+
+    const filtered = await request(app).get("/api/startups").query({ industry: "software", stage: "seed" });
+    expect(filtered.status).toBe(200);
+    expect(filtered.body.data.some((s) => s.name === validStartup.name)).toBe(true);
+
+    const noMatch = await request(app).get("/api/startups").query({ stage: "growth" });
+    expect(noMatch.body.data.some((s) => s.name === validStartup.name)).toBe(false);
+  });
 });
 
 describe("investor profiles and matching", () => {
@@ -62,6 +78,31 @@ describe("investor profiles and matching", () => {
   test("investor without saved criteria gets 404 from matches", async () => {
     const { accessToken } = await registerUser({ role: "investor" });
     const res = await request(app).get("/api/startups/matches").set("Authorization", `Bearer ${accessToken}`);
+    expect(res.status).toBe(404);
+  });
+
+  test("GET /api/investors/me and /api/investors/:id return the saved profile", async () => {
+    const investor = await registerUser({ role: "investor" });
+    await request(app)
+      .put("/api/investors/me")
+      .set("Authorization", `Bearer ${investor.accessToken}`)
+      .send({ aboutMe: "I invest in software", criteria: { minInvestment: 100 } });
+
+    const mine = await request(app).get("/api/investors/me").set("Authorization", `Bearer ${investor.accessToken}`);
+    expect(mine.status).toBe(200);
+    expect(mine.body.data.aboutMe).toBe("I invest in software");
+
+    const other = await registerUser({ role: "candidate" });
+    const byId = await request(app)
+      .get(`/api/investors/${mine.body.data._id}`)
+      .set("Authorization", `Bearer ${other.accessToken}`);
+    expect(byId.status).toBe(200);
+    expect(byId.body.data.aboutMe).toBe("I invest in software");
+  });
+
+  test("GET /api/investors/me returns 404 before any criteria has been saved", async () => {
+    const { accessToken } = await registerUser({ role: "investor" });
+    const res = await request(app).get("/api/investors/me").set("Authorization", `Bearer ${accessToken}`);
     expect(res.status).toBe(404);
   });
 });

@@ -101,7 +101,7 @@ router.get("/", authorize(ROLES.ADMIN), controller.list);
  * /api/users/{id}:
  *   get:
  *     tags: [Users]
- *     summary: Get a user's public profile by id
+ *     summary: Get another user's limited public profile (name, role — not phone/birthdate/location; use /me for your own full profile)
  *     security: [{ BearerAuth: [] }]
  *     parameters:
  *       - in: path

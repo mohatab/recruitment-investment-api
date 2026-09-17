@@ -8,6 +8,16 @@ async function getById(id) {
   return user;
 }
 
+// What one user is allowed to see of another: a name and a role, not their
+// phone/birthdate/nationality/location — that's private profile data, only
+// the owner (getMe) or an admin (list) should see it in full.
+const PUBLIC_PROFILE_FIELDS = "firstName lastName role createdAt";
+async function getPublicProfile(id) {
+  const user = await User.findById(id).select(PUBLIC_PROFILE_FIELDS);
+  if (!user) throw new NotFoundError("User not found");
+  return user;
+}
+
 async function updateProfile(userId, updates) {
   const user = await getById(userId);
   Object.assign(user, updates);
@@ -37,4 +47,4 @@ async function list(query) {
   return { items, meta: buildMeta({ page, limit, total }) };
 }
 
-module.exports = { getById, updateProfile, changePassword, list };
+module.exports = { getById, getPublicProfile, updateProfile, changePassword, list };

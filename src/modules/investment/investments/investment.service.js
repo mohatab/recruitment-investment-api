@@ -25,18 +25,25 @@ async function create(investorUserId, { startupId, amount }) {
 }
 
 // Called from the Stripe webhook only, after signature verification.
-// Idempotent: a payment_intent.succeeded delivered twice (Stripe's own
-// retry behavior) must not double-credit `raisedSoFar`.
+// Idempotent under concurrent delivery: Stripe can and does send the same
+// event more than once (its own retry behavior, or two webhook instances
+// racing). The read-then-write version of this check (find, inspect
+// .status, then save) has a race: two concurrent deliveries can both read
+// "pending" before either writes "paid", and both would credit
+// `raisedSoFar`. Making the pending->paid transition itself the atomic
+// operation — via a single findOneAndUpdate filtered on the *old* status —
+// means only one concurrent call can ever win it; the loser sees `null` and
+// stops, exactly like an already-processed duplicate would.
 async function handlePaymentIntentSucceeded(paymentIntentId) {
-  const investment = await Investment.findOne({ stripePaymentIntentId: paymentIntentId });
+  const investment = await Investment.findOneAndUpdate(
+    { stripePaymentIntentId: paymentIntentId, status: "pending" },
+    { status: "paid" },
+    { new: true }
+  );
   if (!investment) {
-    logger.warn("Webhook for unknown payment intent", { paymentIntentId });
+    logger.warn("Webhook ignored: unknown payment intent or already processed", { paymentIntentId });
     return;
   }
-  if (investment.status === "paid") return; // already processed
-
-  investment.status = "paid";
-  await investment.save();
 
   const startup = await Startup.findByIdAndUpdate(
     investment.startup,

@@ -1,6 +1,7 @@
 const Job = require("./job.model");
 const { NotFoundError, ForbiddenError } = require("../../../common/errors/AppError");
 const { parsePagination, buildMeta } = require("../../../common/utils/pagination");
+const escapeRegex = require("../../../common/utils/escapeRegex");
 
 async function create(recruiterId, data) {
   return Job.create({ ...data, recruiter: recruiterId });
@@ -9,8 +10,8 @@ async function create(recruiterId, data) {
 async function list(query) {
   const { page, limit, skip, sort } = parsePagination(query);
   const filter = { status: query.status || "open" };
-  if (query.role) filter.role = new RegExp(query.role, "i");
-  if (query.location) filter.location = new RegExp(query.location, "i");
+  if (query.role) filter.role = new RegExp(escapeRegex(query.role), "i");
+  if (query.location) filter.location = new RegExp(escapeRegex(query.location), "i");
   if (query.minSalary) filter.minSalary = { $gte: Number(query.minSalary) };
   if (query.search) filter.$text = { $search: query.search };
 

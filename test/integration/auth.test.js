@@ -70,4 +70,19 @@ describe("auth flows", () => {
     expect(missing.status).toBe(200);
     expect(existing.body.message).toBe(missing.body.message);
   });
+
+  test("logout revokes the refresh token so it can no longer be used to refresh", async () => {
+    const { refreshToken } = await registerUser();
+
+    const logoutRes = await request(app).post("/api/auth/logout").send({ refreshToken });
+    expect(logoutRes.status).toBe(200);
+
+    const attemptedRefresh = await request(app).post("/api/auth/refresh").send({ refreshToken });
+    expect(attemptedRefresh.status).toBe(401);
+  });
+
+  test("logging out with an already-revoked or unknown refresh token still returns 200 (no oracle for valid tokens)", async () => {
+    const res = await request(app).post("/api/auth/logout").send({ refreshToken: "not-a-real-token" });
+    expect(res.status).toBe(200);
+  });
 });

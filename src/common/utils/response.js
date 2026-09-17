@@ -6,4 +6,8 @@ function created(res, data, message = "Created") {
   return ok(res, data, message, 201);
 }
 
-module.exports = { ok, created };
+function paginated(res, items, meta, message = "OK") {
+  return res.status(200).json({ success: true, data: items, meta, message });
+}
+
+module.exports = { ok, created, paginated };

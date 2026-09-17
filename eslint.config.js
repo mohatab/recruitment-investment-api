@@ -9,10 +9,18 @@ module.exports = [
       globals: {
         require: "readonly",
         module: "writable",
+        exports: "writable",
         process: "readonly",
         console: "readonly",
         __dirname: "readonly",
+        __filename: "readonly",
         global: "writable",
+        Buffer: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        setInterval: "readonly",
+        clearInterval: "readonly",
+        setImmediate: "readonly",
       },
     },
     rules: {

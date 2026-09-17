@@ -37,20 +37,16 @@ function initSocket(io) {
         if (!receiverId || !body) return ack?.({ error: "receiverId and body are required" });
         const roomId = Message.roomIdFor(userId, receiverId);
         const message = await Message.create({ sender: userId, receiver: receiverId, roomId, body });
-        io.to(roomId).emit("message", message);
+        // Delivered to the recipient's own room (joined automatically at
+        // connect from their verified identity, above) — not a shared
+        // conversation room that would need an extra join step nobody
+        // actually calls, which silently drops every real-time delivery.
+        io.to(`user_${receiverId}`).emit("message", message);
         ack?.({ ok: true, message });
       } catch (err) {
         logger.error("chat:message failed", { error: err.message });
         ack?.({ error: "Failed to send message" });
       }
-    });
-
-    // Joining a conversation room is only possible for a room you're
-    // actually a participant in — recomputed from your own id, not taken
-    // as a raw room name from the client.
-    socket.on("chat:join", ({ otherUserId }) => {
-      if (!otherUserId) return;
-      socket.join(Message.roomIdFor(userId, otherUserId));
     });
 
     socket.on("disconnect", () => {

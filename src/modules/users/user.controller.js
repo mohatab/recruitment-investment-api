@@ -1,6 +1,6 @@
 const userService = require("./user.service");
 const asyncHandler = require("../../common/utils/asyncHandler");
-const { ok } = require("../../common/utils/response");
+const { ok, paginated } = require("../../common/utils/response");
 const storage = require("../../common/storage");
 const { safeKey } = require("../../common/middleware/upload");
 const { NotFoundError } = require("../../common/errors/AppError");
@@ -29,13 +29,13 @@ const uploadCv = asyncHandler(async (req, res) => {
 });
 
 const getById = asyncHandler(async (req, res) => {
-  const user = await userService.getById(req.params.id);
+  const user = await userService.getPublicProfile(req.params.id);
   ok(res, user);
 });
 
 const list = asyncHandler(async (req, res) => {
   const { items, meta } = await userService.list(req.query);
-  res.status(200).json({ success: true, data: items, meta, message: "OK" });
+  paginated(res, items, meta);
 });
 
 module.exports = { getMe, updateMe, changePassword, uploadCv, getById, list };

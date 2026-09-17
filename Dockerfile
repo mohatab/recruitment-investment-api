@@ -6,6 +6,14 @@ RUN npm install --omit=dev
 
 COPY src ./src
 
+# node:alpine already has a non-root `node` user (uid 1000) built in — no
+# reason to run the process as root when nothing here needs it. The upload
+# directory is created and owned by that user up front, since the app
+# writes to it at runtime (local storage driver) and a root-owned /app
+# would otherwise deny that write once we drop privileges below.
+RUN mkdir -p uploads && chown -R node:node /app
+USER node
+
 ENV NODE_ENV=production
 EXPOSE 3000
 

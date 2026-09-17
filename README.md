@@ -15,6 +15,13 @@ refresh-token rotation, role-based authorization, real-time notifications
 and messaging over Socket.IO, and Swagger/OpenAPI docs generated from the
 route annotations.
 
+**Further reading:** [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) (request
+lifecycle, auth/payment/webhook/real-time flows, error handling) ·
+[`docs/DATABASE.md`](./docs/DATABASE.md) (collections, relationships, indexes,
+and why) · [`AUDIT.md`](./AUDIT.md) / [`FINAL_AUDIT.md`](./FINAL_AUDIT.md)
+(before/after) · [`PORTFOLIO_REVIEW.md`](./PORTFOLIO_REVIEW.md) (engineering
+highlights, limitations, interview talking points).
+
 ## Problem statement / origin
 
 This started as three unrelated student mini-projects (recruitment, investor/
@@ -181,6 +188,74 @@ investment is only marked `paid` — and the startup's `raisedSoFar`
 incremented — when Stripe's **signed** webhook confirms it
 (`POST /api/payments/webhook`), never from a client-reported "success".
 
+### Example requests
+
+<details>
+<summary>Register + login</summary>
+
+```bash
+curl -X POST http://localhost:3000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"firstName":"Jane","lastName":"Doe","email":"jane@example.com","password":"S3cure!Pass","role":"candidate"}'
+# 201 { "success": true, "data": { "user": {...}, "accessToken": "...", "refreshToken": "..." } }
+
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"jane@example.com","password":"S3cure!Pass"}'
+# 200 { "success": true, "data": { "user": {...}, "accessToken": "...", "refreshToken": "..." } }
+```
+
+</details>
+
+<details>
+<summary>Authenticated request, create + list a job</summary>
+
+```bash
+curl -X POST http://localhost:3000/api/jobs \
+  -H "Authorization: Bearer $RECRUITER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"title":"Backend Engineer","role":"Engineer","description":"...","responsibilities":"...","minSalary":60000,"maxSalary":90000,"salaryType":"yearly","expirationDate":"2027-01-01T00:00:00.000Z"}'
+# 201 { "success": true, "data": { "_id": "...", "title": "Backend Engineer", ... } }
+
+curl http://localhost:3000/api/jobs?role=engineer&page=1&limit=20
+# 200 { "success": true, "data": [ ... ], "meta": { "page": 1, "limit": 20, "total": 1, "totalPages": 1 } }
+```
+
+</details>
+
+<details>
+<summary>Apply to a job</summary>
+
+```bash
+curl -X POST http://localhost:3000/api/jobs/<jobId>/applications \
+  -H "Authorization: Bearer $CANDIDATE_TOKEN" -H "Content-Type: application/json" \
+  -d '{"coverLetter":"I would be a great fit for this role because..."}'
+# 201 { "success": true, "data": { "status": "submitted", ... } }
+# a second attempt for the same job -> 409 CONFLICT, not a silent duplicate
+```
+
+</details>
+
+<details>
+<summary>Failure cases</summary>
+
+```bash
+# missing/invalid token
+curl http://localhost:3000/api/users/me
+# 401 { "success": false, "error": { "code": "UNAUTHORIZED", "message": "Authentication token not provided" } }
+
+# authenticated, but wrong role (candidate trying to post a job)
+curl -X POST http://localhost:3000/api/jobs -H "Authorization: Bearer $CANDIDATE_TOKEN" -d '{}'
+# 403 { "success": false, "error": { "code": "FORBIDDEN", "message": "This action requires one of these roles: recruiter" } }
+
+# invalid input
+curl -X POST http://localhost:3000/api/auth/register -H "Content-Type: application/json" -d '{}'
+# 400 { "success": false, "error": { "code": "VALIDATION_ERROR", "message": "\"firstName\" is required; ..." } }
+```
+
+</details>
+
+All example values above are placeholders — no real credentials or tokens.
+
 ## Setup
 
 ```bash
@@ -249,9 +324,9 @@ codebase and how each was fixed. Current posture:
 - Stripe: server never touches raw card numbers; payment confirmation is
   driven by a signature-verified webhook, not client input
 - One known accepted residual risk: a moderate `qs` advisory transitive
-  through Express 4's own `body-parser` dependency, with no non-breaking
-  fix available upstream as of this writing (an Express 5 migration would
-  resolve it — tracked as a future improvement, not silently ignored).
+  through Express 4's own `body-parser` dependency (no non-breaking fix
+  available upstream). Express 5 migration was evaluated and deliberately
+  deferred — see [Express 4 vs 5](#express-4-vs-5) below for why.
 
 ## Database design
 
@@ -283,10 +358,26 @@ Not currently deployed. `docker-compose.yml` is a local/staging reference;
 for production, point `MONGODB_URI` at a managed MongoDB instance, set
 `STORAGE_DRIVER=s3`, and put the container behind a TLS-terminating proxy.
 
+### Express 4 vs 5
+
+Investigated, not assumed. Express 5.2.1 does pull a patched `qs`
+(`^6.14.0`, resolving to `6.16.0` — outside the vulnerable `2.2.5–6.15.3`
+range), so migrating would close that advisory. It was deferred anyway:
+`express-mongo-sanitize@2.2.0` — the middleware providing NoSQL-injection
+protection on every request — reassigns `req.query` wholesale
+(`req.query = target`), and Express 5 defines `req.query` as a **read-only
+getter**, so that assignment throws at runtime on every request that
+reaches it. That's a concrete, verified break in a security control this
+project actively relies on, not a hypothetical one — confirmed by reading
+the installed middleware's source, not by assumption. `helmet`,
+`express-rate-limit`, and `swagger-ui-express` all declare or are
+compatible with Express 5; this one dependency is the actual blocker.
+Revisit when either `express-mongo-sanitize` ships an Express-5-compatible
+release, or this project replaces it with a sanitizer that mutates
+`req.query`'s existing keys in place instead of reassigning the object.
+
 ## Future improvements
 
-- Migrate to Express 5 to close the one remaining moderate dependency
-  advisory (see Security)
 - Horizontal scaling for Socket.IO would need a shared adapter (Redis) for
   the in-memory presence map — noted at the point it's implemented
   (`src/realtime/presence.js`)
