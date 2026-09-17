@@ -1,6 +1,5 @@
-# Dependencies
+# Dependencies (package-lock.json IS committed: reproducible installs for npm ci / Docker / CI)
 node_modules/
-package-lock.json
 yarn.lock
 
 # Environment variables
@@ -10,6 +9,17 @@ yarn.lock
 
 # Uploaded files (local storage driver) — never commit user-uploaded content
 uploads/
+
+# Personal documents never belong in this repo (real CVs/coursework were once
+# committed by accident, see docs/PROJECT_AUDIT.md). The app has no committed
+# binary assets; add an explicit !exception if that ever changes.
+*.pdf
+*.doc
+*.docx
+*.png
+*.jpg
+*.jpeg
+*.webp
 
 # Logs
 logs
