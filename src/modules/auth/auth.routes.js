@@ -22,6 +22,7 @@ router.use(authLimiter);
  *       201: { description: Registered, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
  *       400: { $ref: '#/components/responses/ValidationError' }
  *       409: { description: Email already registered }
+ *       429: { $ref: '#/components/responses/TooManyRequests' }
  */
 router.post("/register", validate(schemas.register), controller.register);
 
@@ -39,6 +40,7 @@ router.post("/register", validate(schemas.register), controller.register);
  *     responses:
  *       200: { description: Logged in, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
  *       401: { description: Invalid credentials }
+ *       429: { $ref: '#/components/responses/TooManyRequests' }
  */
 router.post("/login", validate(schemas.login), controller.login);
 
@@ -56,6 +58,7 @@ router.post("/login", validate(schemas.login), controller.login);
  *     responses:
  *       200: { description: New token pair issued }
  *       401: { description: Invalid or expired refresh token }
+ *       429: { $ref: '#/components/responses/TooManyRequests' }
  */
 router.post("/refresh", validate(schemas.refresh), controller.refresh);
 
@@ -72,6 +75,7 @@ router.post("/refresh", validate(schemas.refresh), controller.refresh);
  *           schema: { type: object, required: [refreshToken], properties: { refreshToken: { type: string } } }
  *     responses:
  *       200: { description: Logged out }
+ *       429: { $ref: '#/components/responses/TooManyRequests' }
  */
 router.post("/logout", validate(schemas.refresh), controller.logout);
 
@@ -88,6 +92,7 @@ router.post("/logout", validate(schemas.refresh), controller.logout);
  *           schema: { type: object, required: [email], properties: { email: { type: string, format: email } } }
  *     responses:
  *       200: { description: Reset email sent if the account exists }
+ *       429: { $ref: '#/components/responses/TooManyRequests' }
  */
 router.post("/forgot-password", validate(schemas.forgotPassword), controller.forgotPassword);
 
@@ -105,6 +110,7 @@ router.post("/forgot-password", validate(schemas.forgotPassword), controller.for
  *     responses:
  *       200: { description: Password reset }
  *       401: { description: Invalid or expired token }
+ *       429: { $ref: '#/components/responses/TooManyRequests' }
  */
 router.post("/reset-password", validate(schemas.resetPassword), controller.resetPassword);
 

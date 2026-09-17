@@ -4,7 +4,9 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NODE_ENV: production
+      # development by default so `docker compose up` works without Stripe/SMTP;
+      # production additionally requires CORS_ORIGIN, Stripe and SMTP (see .env.example).
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: 3000
       MONGODB_URI: mongodb://mongo:27017/recruitment-investment
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set a real secret in .env}
@@ -12,6 +14,13 @@ services:
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       BASE_URL: ${BASE_URL:-http://localhost:3000}
+      CORS_ORIGIN: ${CORS_ORIGIN:-}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_SERVICE: ${SMTP_SERVICE:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
     depends_on:
       mongo:
         condition: service_healthy

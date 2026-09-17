@@ -24,7 +24,7 @@ function getTransporter() {
 
 async function sendEmail({ to, subject, text, html }) {
   if (!env.email.user || !env.email.pass) {
-    logger.warn("Email not configured — skipping send", { to, subject });
+    logger.warn("Email not configured — skipping send", { subject });
     return;
   }
   try {
@@ -32,7 +32,7 @@ async function sendEmail({ to, subject, text, html }) {
   } catch (err) {
     // Email delivery failing must never crash the request that triggered it
     // (e.g. registration) — log and move on.
-    logger.error("Failed to send email", { to, subject, error: err.message });
+    logger.error("Failed to send email", { subject, error: err.message });
   }
 }
 

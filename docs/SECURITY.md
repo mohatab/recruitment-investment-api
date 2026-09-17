@@ -139,15 +139,22 @@ so it can be checked directly.
   return a generic `500 INTERNAL_ERROR` with no internal detail.
 - No log statement includes a password, token, or full request body —
   verified by grep, not just by convention (`grep -rn "logger\." src/ | grep -i "password\|token"` returns nothing beyond field _names_ in code, no logged _values_).
-- Structured, leveled logging (`common/utils/logger.js`) with a request
-  correlation id (`X-Request-Id`) on every response.
+- Structured JSON access log per request (`common/middleware/requestLogger.js`)
+  with a request correlation id (`X-Request-Id`). Incoming ids are accepted
+  only if they match a strict pattern, so a client can't inject text into logs.
+  Query strings, headers and bodies are never logged; neither are email addresses.
 
 ## Configuration & secrets
 
-- `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, and `MONGODB_URI` are
-  validated at startup (`config/env.js`) — the app refuses to boot rather
-  than fall back to an insecure default, which is precisely how the
-  original codebase's hardcoded `"secret"` JWT existed unnoticed.
+- Every environment variable is schema-validated at startup (`config/env.js`).
+  The app refuses to boot rather than fall back to an insecure default, which is
+  how the original codebase's hardcoded `"secret"` JWT went unnoticed. Production
+  additionally requires 32+ character JWT secrets, a non-`*` CORS allowlist,
+  and Stripe/SMTP credentials.
+- `trust proxy` comes from `TRUST_PROXY` and is off by default. It used to be
+  hardcoded to `1`, which let a client rotate `X-Forwarded-For` to bypass every
+  rate limiter when the app was reachable directly (regression test:
+  `test/integration/rate-limit.test.js`).
 - No secret is committed: verified by grepping for Stripe/AWS key shapes
   and PEM headers across the repository (see `FINAL_PROJECT_REPORT.md` for
   the exact command run and its empty result), and `.env` is gitignored.

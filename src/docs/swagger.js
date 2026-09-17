@@ -8,7 +8,7 @@ const options = {
       title: "Recruitment & Investment Platform API",
       version: "2.0.0",
       description:
-        "Job recruitment (postings, applications, CVs) combined with an investor/startup investment platform, real-time notifications, and messaging.",
+        "Every response carries an X-Request-Id header. Malformed JSON bodies return 400 INVALID_JSON, oversized bodies 413 PAYLOAD_TOO_LARGE, and rate-limited requests 429 TOO_MANY_REQUESTS, all using the Error schema. Job recruitment (postings, applications, CVs) combined with an investor/startup investment platform, real-time notifications, and messaging.",
     },
     servers: [{ url: env.baseUrl, description: "Current environment" }],
     components: {
@@ -157,8 +157,17 @@ const options = {
             success: { type: "boolean", example: false },
             error: {
               type: "object",
-              properties: { code: { type: "string" }, message: { type: "string" } },
+              properties: {
+                code: {
+                  type: "string",
+                  description:
+                    "Machine-readable code, e.g. VALIDATION_ERROR, INVALID_JSON, INVALID_ID, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, CONFLICT, DUPLICATE_KEY, UPLOAD_ERROR, PAYLOAD_TOO_LARGE, TOO_MANY_REQUESTS, INTERNAL_ERROR",
+                },
+                message: { type: "string" },
+                details: { type: "array", items: { type: "string" } },
+              },
             },
+            requestId: { type: "string", description: "Same value as the X-Request-Id response header" },
           },
         },
       },
@@ -177,6 +186,14 @@ const options = {
         },
         NotFound: {
           description: "Resource not found",
+          content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+        },
+        PayloadTooLarge: {
+          description: "Request body over the limit (1mb JSON) — PAYLOAD_TOO_LARGE",
+          content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+        },
+        TooManyRequests: {
+          description: "Rate limit exceeded — TOO_MANY_REQUESTS",
           content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
         },
       },

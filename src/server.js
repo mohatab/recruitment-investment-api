@@ -21,10 +21,9 @@ async function start() {
   });
 }
 
-let shuttingDown = false;
 async function shutdown(signal) {
-  if (shuttingDown) return; // a second signal while draining shouldn't restart the sequence
-  shuttingDown = true;
+  if (app.locals.shuttingDown) return; // a second signal while draining shouldn't restart the sequence
+  app.locals.shuttingDown = true; // /health/ready now answers 503 while connections drain
   logger.info(`${signal} received, shutting down gracefully`);
 
   // Force-exit if a stuck connection (or a hung mongoose disconnect) would
@@ -47,33 +46,32 @@ async function shutdown(signal) {
   process.exit(0);
 }
 
-process.on("SIGINT", () => shutdown("SIGINT"));
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-
-// An uncaught exception leaves the process in an unknown state — Node's own
-// docs recommend logging and exiting rather than trying to keep going.
-// An unhandled promise rejection gets the same treatment: since Node 15,
-// the default behavior is to crash anyway, so this just makes sure it's
-// logged in our structured format before that happens.
-process.on("uncaughtException", (err) => {
-  logger.error("Uncaught exception — exiting", { error: err.message, stack: err.stack });
-  process.exit(1);
-});
-process.on("unhandledRejection", (reason) => {
-  logger.error("Unhandled promise rejection — exiting", {
-    error: reason instanceof Error ? reason.message : String(reason),
-    stack: reason instanceof Error ? reason.stack : undefined,
-  });
-  process.exit(1);
-});
-
-// Only connect + bind a port when run directly (`node src/server.js`); when
-// imported by tests via supertest, neither side effect runs.
+// Only when run directly (`node src/server.js`): tests import this module for
+// app/server/shutdown and must not get process-wide signal/exit handlers.
 if (require.main === module) {
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+  // An uncaught exception leaves the process in an unknown state — Node's own
+  // docs recommend logging and exiting rather than trying to keep going.
+  // Unhandled rejections get the same treatment (Node's default since v15),
+  // just logged in our structured format first.
+  process.on("uncaughtException", (err) => {
+    logger.error("Uncaught exception — exiting", { error: err.message, stack: err.stack });
+    process.exit(1);
+  });
+  process.on("unhandledRejection", (reason) => {
+    logger.error("Unhandled promise rejection — exiting", {
+      error: reason instanceof Error ? reason.message : String(reason),
+      stack: reason instanceof Error ? reason.stack : undefined,
+    });
+    process.exit(1);
+  });
+
   start().catch((err) => {
     logger.error("Failed to start server", { error: err.message });
     process.exit(1);
   });
 }
 
-module.exports = { app, server, io };
+module.exports = { app, server, io, shutdown };

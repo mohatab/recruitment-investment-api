@@ -266,15 +266,32 @@ cp .env.example .env   # fill in real values — see below
 npm run dev             # nodemon, or: npm start
 ```
 
-Runs at `http://localhost:3000`; Swagger UI at `/api-docs`; health check at
-`/health`.
+Runs at `http://localhost:3000`; Swagger UI at `/api-docs`.
+
+### Health checks
+
+| Endpoint            | Purpose                                                                                                             | 200    | 503                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------- | ------ | ---------------------------------------------- |
+| `GET /health`       | Liveness: the process serves HTTP. Checks no dependencies, so a database outage never restarts a healthy container. | always | never                                          |
+| `GET /health/ready` | Readiness: MongoDB answers a `ping` (2 s timeout) and the server is not draining.                                   | ready  | MongoDB down, or graceful shutdown in progress |
+
+Both are exempt from rate limiting.
 
 ### Environment variables
 
 See [`.env.example`](./.env.example) for the full list with descriptions.
-The app validates `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, and
-`MONGODB_URI` at startup and **refuses to boot** if any are missing — no
-insecure default secret exists to fall back to.
+Every variable is validated at startup (`src/config/env.js`). The process
+**exits with code 1 and a message listing every problem** if anything is
+missing or malformed. Always required: `MONGODB_URI`, `JWT_ACCESS_SECRET`,
+`JWT_REFRESH_SECRET` (the two must differ). With `NODE_ENV=production` these
+are also required: a `CORS_ORIGIN` allowlist (not `*`), JWT secrets of 32+
+characters, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `SMTP_USER` and
+`SMTP_PASS`.
+
+`TRUST_PROXY` is **off by default**. Set it (e.g. `1` for one proxy hop) only
+when the app runs behind a reverse proxy that overwrites `X-Forwarded-For`.
+When it is on and clients can reach the app directly, they can spoof their
+IP and bypass rate limiting.
 
 ### Docker
 
@@ -284,7 +301,10 @@ docker compose up --build
 ```
 
 Starts the API (port 3000) and MongoDB (port 27017), with a container
-`HEALTHCHECK` hitting `/health`.
+`HEALTHCHECK` hitting `/health` (liveness). Compose defaults to
+`NODE_ENV=development` so it starts without Stripe/SMTP credentials; set
+`NODE_ENV=production` in `.env` together with the production-required
+variables above.
 
 ## Testing
 

@@ -7,6 +7,7 @@ const swaggerUi = require("swagger-ui-express");
 const env = require("./config/env");
 const swaggerSpec = require("./docs/swagger");
 const requestId = require("./common/middleware/requestId");
+const requestLogger = require("./common/middleware/requestLogger");
 const { apiLimiter } = require("./common/middleware/rateLimiter");
 const { errorHandler, notFound } = require("./common/middleware/errorHandler");
 const localStorage = require("./common/storage/localStorage");
@@ -27,14 +28,19 @@ const healthRoutes = require("./modules/health/health.routes");
 
 const app = express();
 
-app.set("trust proxy", 1);
+app.set("trust proxy", env.trustProxy); // default off — see TRUST_PROXY in config/env.js
 app.use(requestId);
+app.use(requestLogger);
 app.use(helmet());
 // A wildcard origin is only safe here because auth is a bearer token in an
 // Authorization header, never a cookie — `credentials: true` is never set,
 // so this doesn't expose cookie-authenticated responses to arbitrary sites.
 // Set CORS_ORIGIN to a real allowlist for a deployment that adds cookies.
 app.use(cors({ origin: env.corsOrigin }));
+
+// Probes are mounted before the rate limiter so frequent orchestrator checks
+// can never be throttled into a false "unhealthy".
+app.use(healthRoutes);
 
 // Stripe webhook signatures are computed over the raw body, so this route
 // must get the unparsed body — it's mounted before express.json() runs.
@@ -47,7 +53,6 @@ app.use(apiLimiter);
 app.use("/uploads", express.static(localStorage.rootDir));
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-app.use(healthRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/jobs", jobRoutes);

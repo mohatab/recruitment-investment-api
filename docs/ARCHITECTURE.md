@@ -171,11 +171,26 @@ wrong easily elsewhere:
 One centralized handler (`common/middleware/errorHandler.js`) turns every
 error into the same response shape. `normalize()` maps known failure
 shapes — a thrown `AppError` subclass, a Mongoose `ValidationError`,
-`CastError`, or duplicate-key error, a Multer file-upload error — to a
-`{statusCode, code, message}` triple; anything unrecognized becomes a
-generic `500 INTERNAL_ERROR` with no stack trace or internal detail sent to
-the client (the stack is logged server-side only, and only outside
-`NODE_ENV=production`).
+`CastError`, or duplicate-key error, a Multer file-upload error, a body-parser
+failure (malformed JSON → `400 INVALID_JSON`, oversized body →
+`413 PAYLOAD_TOO_LARGE`) — to a `{statusCode, code, message}` triple;
+anything unrecognized becomes a generic `500 INTERNAL_ERROR` with no stack
+trace or internal detail sent to the client. Every error body includes the
+`requestId`. Rate-limit rejections (`429 TOO_MANY_REQUESTS`) go through the
+same handler.
+
+## Logging and request correlation
+
+- `requestId` middleware reuses a client/proxy `X-Request-Id` only if it
+  matches `[A-Za-z0-9._:-]{1,128}`; otherwise it generates a UUID. The id is
+  echoed in the response header and in error bodies.
+- `requestLogger` writes one JSON line per request when the response
+  finishes: `requestId`, `method`, `path` (no query string), matched
+  `route`, `status`, `durationMs`, `userId` and `errorCode`. Level: `info`
+  for 2xx/3xx, `warn` for 4xx, `error` for 5xx. Health probes log at `debug`
+  (`warn` when not ready).
+- Headers, query strings and bodies are never logged. Only 5xx errors produce
+  an extra `error` entry with a stack (stack omitted in production).
 
 ## Why layered instead of a simpler flat structure
 

@@ -127,9 +127,10 @@ HTTP endpoints so they're noted here rather than tabulated above.
 
 ## Health
 
-| Method | Path      | Auth | Success                                            | Failure                        | Test             | Swagger |
-| ------ | --------- | ---- | -------------------------------------------------- | ------------------------------ | ---------------- | ------- |
-| GET    | `/health` | none | 200 `{status:"ok", db:"connected", uptimeSeconds}` | 503 if MongoDB isn't connected | `health.test.js` | ✅      |
+| Method | Path            | Auth | Success                                                             | Failure                                            | Test             | Swagger |
+| ------ | --------------- | ---- | ------------------------------------------------------------------- | -------------------------------------------------- | ---------------- | ------- |
+| GET    | `/health`       | none | 200 `{status:"ok", uptimeSeconds}` (liveness, no dependency checks) | never                                              | `health.test.js` | ✅      |
+| GET    | `/health/ready` | none | 200 `{status:"ready", checks:{mongodb:"up"}}`                       | 503 when the MongoDB ping fails or during shutdown | `health.test.js` | ✅      |
 
 ## How this was verified, not just written
 

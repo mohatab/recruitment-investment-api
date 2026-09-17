@@ -24,9 +24,10 @@ domain, with a link to the exact source for each.
   vary per endpoint (documented in Swagger and in
   [`API_ENDPOINT_INVENTORY.md`](./API_ENDPOINT_INVENTORY.md)).
 - **Errors**: every error response carries a machine-readable `code`
-  (`VALIDATION_ERROR`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`,
-  `CONFLICT`, `INVALID_ID`, `DUPLICATE_KEY`, `UPLOAD_ERROR`, or
-  `INTERNAL_ERROR`) — see `common/errors/AppError.js`.
+  (`VALIDATION_ERROR`, `INVALID_JSON`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`,
+  `CONFLICT`, `INVALID_ID`, `DUPLICATE_KEY`, `UPLOAD_ERROR`, `PAYLOAD_TOO_LARGE`,
+  `TOO_MANY_REQUESTS`, or `INTERNAL_ERROR`) plus the `requestId` that is also
+  sent as the `X-Request-Id` header — see `common/middleware/errorHandler.js`.
 
 ## Domains
 
@@ -44,7 +45,7 @@ domain, with a link to the exact source for each.
 | Messaging          | `/api/messages`                                      | `src/modules/messaging/`                | [#messaging](./API_ENDPOINT_INVENTORY.md#messaging-apimessages)                                                          |
 | Experience         | `/api/experiences`                                   | `src/modules/experience/`               | [#experience](./API_ENDPOINT_INVENTORY.md#experience-apiexperiences)                                                     |
 | Contact            | `/api/contact`                                       | `src/modules/contact/`                  | [#contact](./API_ENDPOINT_INVENTORY.md#contact-apicontact--public)                                                       |
-| Health             | `/health`                                            | `src/modules/health/`                   | [#health](./API_ENDPOINT_INVENTORY.md#health)                                                                            |
+| Health             | `/health`, `/health/ready`                           | `src/modules/health/`                   | [#health](./API_ENDPOINT_INVENTORY.md#health)                                                                            |
 
 For request/response examples with real `curl` commands, see the README's
 [Example requests](../README.md#example-requests) section. For the
