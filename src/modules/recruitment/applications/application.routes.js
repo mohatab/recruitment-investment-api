@@ -15,7 +15,7 @@ router.use(authenticate);
  * /api/v1/jobs/{jobId}/applications:
  *   post:
  *     tags: [Applications]
- *     summary: Apply to a job (candidates only)
+ *     summary: Apply to a job (candidates only). The job must be open and unexpired (422 JOB_CLOSED / JOB_EXPIRED); resumeUrl falls back to the applicant's stored CV (422 RESUME_REQUIRED if there is none); one application per job (409).
  *     security: [{ BearerAuth: [] }]
  *     x-required-roles: [candidate]
  *     parameters:

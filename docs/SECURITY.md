@@ -122,6 +122,19 @@ Admin is **not** a superuser: admin can do only the operations listed below.
   access (IDOR/BOLA) and client-supplied ownership/role/state fields for
   every resource above.
 
+## Recruitment rules that are also security controls
+
+- `resumeUrl` accepts **http(s) only**: a `javascript:` or `data:` URL would
+  otherwise be stored and later opened by the recruiter reviewing it.
+- Application status moves through one conditional update filtered on the
+  status it was validated against, so a concurrent transition is refused
+  (`409`) instead of overwriting; the applicant, job and status of an
+  application are always server-set.
+- Job search filters (`role`, `location`) are regex-escaped and `sort` is
+  allowlisted, so neither becomes a query-injection or ReDoS vector.
+- A candidate's application list never exposes other applicants, and the
+  applicant's contact details are visible only to the owning recruiter.
+
 ## Input handling
 
 - **Joi validation on every write endpoint**, via one shared `validate()`

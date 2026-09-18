@@ -8,9 +8,9 @@ const { parsePagination, buildPagination } = require("../../../common/utils/pagi
 
 const SORTABLE = ["createdAt", "status"];
 
-// A candidate can only ever move an application forward by withdrawing
-// (not modeled here); every other transition is recruiter-driven. Terminal
-// states have no outgoing transitions.
+// The recruiter drives the pipeline; a candidate never changes status. Terminal
+// states have no outgoing transitions, and `rejected` is reachable from any
+// live state.
 const TRANSITIONS = {
   submitted: ["under_review", "rejected"],
   under_review: ["shortlisted", "rejected"],
@@ -26,25 +26,32 @@ async function apply(jobId, applicantId, input) {
   if (job.status !== "open") {
     throw new UnprocessableEntityError("This job is no longer accepting applications", CODES.JOB_CLOSED);
   }
+  if (job.isExpired) {
+    throw new UnprocessableEntityError("This job posting has expired", CODES.JOB_EXPIRED);
+  }
 
-  const resumeUrl = input.resumeUrl || (await User.findById(applicantId)).cvUrl;
+  const resumeUrl = input.resumeUrl || (await User.findById(applicantId).select("cvUrl").lean())?.cvUrl;
   if (!resumeUrl) {
     throw new UnprocessableEntityError("Upload a CV before applying, or provide a resumeUrl", CODES.RESUME_REQUIRED);
   }
 
+  let application;
   try {
-    const application = await Application.create({
-      job: jobId,
+    // One application per candidate per job is a unique index, so two
+    // simultaneous submissions can't both insert — the loser lands here.
+    application = await Application.create({
+      job: job._id,
       applicant: applicantId,
       coverLetter: input.coverLetter,
       resumeUrl,
     });
-    await notificationService.notifyUser(job.recruiter, `New application received for "${job.title}"`);
-    return application;
   } catch (err) {
     if (err.code === 11000) throw new ConflictError("You have already applied to this job");
     throw err;
   }
+
+  await notificationService.notifyUserSafely(job.recruiter, `New application received for "${job.title}"`);
+  return application;
 }
 
 async function listForJob(jobId, recruiterId, query) {
@@ -52,23 +59,25 @@ async function listForJob(jobId, recruiterId, query) {
   if (!job) throw new NotFoundError("Job not found");
   assertOwner(job.recruiter, recruiterId, "You can only view applications for your own job postings");
 
-  const { page, limit, skip, sort } = parsePagination(query, { allowedSort: SORTABLE });
-  const filter = { job: jobId };
+  const filter = { job: job._id };
   if (query.status) filter.status = query.status;
-
-  const [items, total] = await Promise.all([
-    Application.find(filter).sort(sort).skip(skip).limit(limit).populate("applicant", "firstName lastName email"),
-    Application.countDocuments(filter),
-  ]);
-  return { items, pagination: buildPagination({ page, limit, total }) };
+  return listApplications(filter, query, ["applicant", "firstName lastName email"]);
 }
 
 async function listMine(applicantId, query) {
-  const { page, limit, skip, sort } = parsePagination(query, { allowedSort: SORTABLE });
   const filter = { applicant: applicantId };
+  if (query.status) filter.status = query.status;
+  return listApplications(filter, query, ["job", "title role status expirationDate"]);
+}
 
+async function listApplications(filter, query, populate) {
+  const { page, limit, skip, sort } = parsePagination(query, { allowedSort: SORTABLE });
   const [items, total] = await Promise.all([
-    Application.find(filter).sort(sort).skip(skip).limit(limit).populate("job", "title role status"),
+    Application.find(filter)
+      .sort(sort)
+      .skip(skip)
+      .limit(limit)
+      .populate(...populate),
     Application.countDocuments(filter),
   ]);
   return { items, pagination: buildPagination({ page, limit, total }) };
@@ -80,21 +89,41 @@ async function updateStatus(applicationId, recruiterId, nextStatus) {
   // job is null if the posting was deleted; assertOwner treats that as not owned.
   assertOwner(application.job?.recruiter, recruiterId, "You can only manage applications for your own job postings");
 
-  const allowed = TRANSITIONS[application.status] || [];
-  if (!allowed.includes(nextStatus)) {
+  const current = application.status;
+  if (!TRANSITIONS[current]?.includes(nextStatus)) {
     throw new UnprocessableEntityError(
-      `Cannot move an application from "${application.status}" to "${nextStatus}"`,
+      `Cannot move an application from "${current}" to "${nextStatus}"`,
       CODES.INVALID_STATUS_TRANSITION
     );
   }
 
-  application.status = nextStatus;
-  await application.save();
-  await notificationService.notifyUser(
-    application.applicant,
+  // Conditional on the status we validated against, so two concurrent
+  // transitions from the same state can't both apply (last-write-wins used to
+  // let "reject" silently overwrite "under_review", or vice versa).
+  const updated = await Application.findOneAndUpdate(
+    { _id: applicationId, status: current },
+    { status: nextStatus },
+    { new: true }
+  );
+  if (!updated) {
+    throw new ConflictError(
+      "This application was updated by someone else — reload it and try again",
+      CODES.APPLICATION_STATUS_CONFLICT
+    );
+  }
+
+  await notificationService.notifyUserSafely(
+    updated.applicant,
     `Your application for "${application.job.title}" is now "${nextStatus}"`
   );
-  return application;
+  return updated;
 }
 
-module.exports = { apply, listForJob, listMine, updateStatus, TRANSITIONS, SORTABLE };
+module.exports = {
+  apply,
+  listForJob,
+  listMine,
+  updateStatus,
+  TRANSITIONS,
+  SORTABLE,
+};

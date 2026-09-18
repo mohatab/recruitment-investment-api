@@ -4,8 +4,13 @@ const { listQuery } = require("../../../common/utils/pagination");
 const { SORTABLE } = require("./application.service");
 
 const create = Joi.object({
-  coverLetter: Joi.string().min(10).required(),
-  resumeUrl: Joi.string().uri().optional(), // falls back to the applicant's on-file CV if omitted
+  coverLetter: Joi.string().trim().min(10).max(5000).required(),
+  // http(s) only: a "javascript:" or "data:" URL here would be handed straight
+  // to a recruiter's browser. Omitted -> the applicant's on-file CV is used.
+  resumeUrl: Joi.string()
+    .uri({ scheme: ["http", "https"] })
+    .max(2000)
+    .optional(),
 });
 
 const updateStatus = Joi.object({

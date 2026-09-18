@@ -13,7 +13,7 @@ const router = express.Router();
  * /api/v1/jobs:
  *   get:
  *     tags: [Jobs]
- *     summary: Search/list open jobs
+ *     summary: Search/list jobs that are accepting applications (open and not past their expirationDate); status=closed lists closed postings
  *     security: []
  *     parameters:
  *       - $ref: '#/components/parameters/Page'
@@ -44,6 +44,28 @@ const router = express.Router();
  *       200: { $ref: '#/components/responses/JobListResponse' }
  */
 router.get("/", validate(schemas.list, "query"), controller.list);
+
+/**
+ * @swagger
+ * /api/v1/jobs/mine:
+ *   get:
+ *     tags: [Jobs]
+ *     summary: List the current recruiter's own postings, including closed and expired ones (which the public list hides)
+ *     security: [{ BearerAuth: [] }]
+ *     x-required-roles: [recruiter]
+ *     parameters:
+ *       - $ref: '#/components/parameters/Page'
+ *       - $ref: '#/components/parameters/Limit'
+ *       - $ref: '#/components/parameters/Sort'
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: [open, closed] }
+ *     responses:
+ *       200: { $ref: '#/components/responses/JobListResponse' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
+ */
+router.get("/mine", authenticate, authorize(ROLES.RECRUITER), validate(schemas.list, "query"), controller.listMine);
 
 /**
  * @swagger
@@ -95,7 +117,7 @@ router.post(
  * /api/v1/jobs/{id}:
  *   patch:
  *     tags: [Jobs]
- *     summary: Update a job posting (owning recruiter only)
+ *     summary: "Update a job posting (owning recruiter only). Partial updates are validated against the merged document: minSalary must stay <= maxSalary, an external applyMethod keeps a link or email, and reopening a closed job requires a future expirationDate (422 JOB_EXPIRED)."
  *     security: [{ BearerAuth: [] }]
  *     x-required-roles: [recruiter]
  *     parameters:
@@ -116,7 +138,7 @@ router.patch("/:id", authenticate, authorize(ROLES.RECRUITER), validate(schemas.
  * /api/v1/jobs/{id}:
  *   delete:
  *     tags: [Jobs]
- *     summary: Delete a job posting (owning recruiter only)
+ *     summary: Delete a job posting (owning recruiter only). A posting that already has applications cannot be deleted (409 JOB_HAS_APPLICATIONS) — close it instead, so candidates keep their application history.
  *     security: [{ BearerAuth: [] }]
  *     x-required-roles: [recruiter]
  *     parameters:
@@ -126,6 +148,7 @@ router.patch("/:id", authenticate, authorize(ROLES.RECRUITER), validate(schemas.
  *         schema: { type: string }
  *     responses:
  *       204: { $ref: '#/components/responses/NoContent' }
+ *       409: { $ref: '#/components/responses/Conflict' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       403: { $ref: '#/components/responses/Forbidden' }
  *       404: { $ref: '#/components/responses/NotFound' }

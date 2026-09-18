@@ -2,6 +2,7 @@ const Notification = require("./notification.model");
 const User = require("../users/user.model");
 const { getIO } = require("../../realtime/ioRegistry");
 const { NotFoundError, ForbiddenError } = require("../../common/errors/AppError");
+const logger = require("../../common/utils/logger");
 const { parsePagination, buildPagination } = require("../../common/utils/pagination");
 
 const SORTABLE = ["createdAt"];
@@ -25,6 +26,18 @@ async function notifyRole(role, message) {
   const notification = await Notification.create({ message, targetRole: role });
   getIO()?.to(`role_${role}`).emit("notification", toView(notification));
   return toView(notification);
+}
+
+// For notifications raised as a side effect of another operation: the write
+// that triggered it is already committed, so a failure here must be logged,
+// not turned into a 500 for an action that actually succeeded.
+async function notifyUserSafely(userId, message) {
+  try {
+    return await notifyUser(userId, message);
+  } catch (err) {
+    logger.error("Failed to deliver notification", { userId: String(userId), error: err.message });
+    return null;
+  }
 }
 
 // Admin endpoint: unlike internal callers, the target comes from the request.
@@ -71,4 +84,4 @@ async function markRead(notificationId, user) {
   throw new NotFoundError("Notification not found");
 }
 
-module.exports = { notifyUser, notifyRole, send, listMine, markRead, SORTABLE };
+module.exports = { notifyUser, notifyUserSafely, notifyRole, send, listMine, markRead, SORTABLE };

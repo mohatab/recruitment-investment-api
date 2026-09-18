@@ -232,6 +232,13 @@ POST /api/v1/users/me/cv    multipart/form-data, field "cv"
 POST /api/v1/jobs/:jobId/applications  { coverLetter }   # uses the on-file CV if resumeUrl is omitted
 ```
 
+A job accepts applications only while it is `open` **and** its
+`expirationDate` is in the future; an expired posting disappears from the
+public list, refuses applications (`422 JOB_EXPIRED`) and is visible to its
+recruiter at `GET /api/v1/jobs/mine`, flagged `isExpired`. A job that already
+has applications cannot be deleted (`409 JOB_HAS_APPLICATIONS`) — close it
+instead, so candidates keep their history.
+
 **Recruiter reviews an application**
 
 ```
@@ -242,6 +249,8 @@ PATCH /api/v1/applications/:id/status  { "status": "under_review" }
 Valid transitions: `submitted → under_review → shortlisted → interview →
 accepted`, with `rejected` reachable from any non-terminal state. Skipping a
 step (e.g. `submitted → accepted`) is rejected with `422 INVALID_STATUS_TRANSITION`.
+If two recruiters move the same application at once, the second gets
+`409 APPLICATION_STATUS_CONFLICT` instead of silently overwriting the first.
 
 **Investor invests in a startup**
 

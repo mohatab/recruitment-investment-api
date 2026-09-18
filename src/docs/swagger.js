@@ -67,6 +67,11 @@ const entities = {
       location: { type: "string" },
       expirationDate: { type: "string", format: "date-time" },
       status: { type: "string", enum: ["open", "closed"] },
+      isExpired: {
+        type: "boolean",
+        description:
+          "True once expirationDate has passed; such a job accepts no applications and is hidden from the public list",
+      },
       ...timestamps,
     },
   },

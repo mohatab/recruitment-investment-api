@@ -34,7 +34,7 @@ router.get("/mine", authorize(ROLES.CANDIDATE), validate(schemas.list, "query"),
  * /api/v1/applications/{id}/status:
  *   patch:
  *     tags: [Applications]
- *     summary: Move an application to the next status in its lifecycle (owning recruiter only)
+ *     summary: Move an application to the next status in its lifecycle (owning recruiter only). Illegal transitions are 422 INVALID_STATUS_TRANSITION; if someone else moved it first the update is refused with 409 APPLICATION_STATUS_CONFLICT rather than overwriting.
  *     security: [{ BearerAuth: [] }]
  *     x-required-roles: [recruiter]
  *     parameters:
@@ -53,6 +53,7 @@ router.get("/mine", authorize(ROLES.CANDIDATE), validate(schemas.list, "query"),
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       403: { $ref: '#/components/responses/Forbidden' }
  *       404: { $ref: '#/components/responses/NotFound' }
+ *       409: { $ref: '#/components/responses/Conflict' }
  *       422: { $ref: '#/components/responses/UnprocessableEntity' }
  */
 router.patch("/:id/status", authorize(ROLES.RECRUITER), validate(schemas.updateStatus), controller.updateStatus);

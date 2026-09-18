@@ -83,6 +83,27 @@ none were added speculatively.
 - `Message.{roomId, createdAt}` — every message query filters by `roomId` and sorts by `createdAt`; this single compound index serves both (a separate single-field index on `roomId` alone would be redundant, since this compound index's `roomId`-only prefix already serves a `roomId`-alone query — an earlier version of this schema had exactly that redundant index, removed once the query patterns were checked against it)
 - `RefreshToken`/`AuthToken.{expiresAt}` — TTL indexes for automatic expiry; `AuthToken.{user, purpose, createdAt}` serves the supersede and cooldown lookups
 
+## Recruitment constraints
+
+- `Application.{job, applicant}` is **unique**: one application per candidate
+  per job, enforced by the database rather than a check-then-insert that two
+  concurrent requests could both pass. The service turns the duplicate-key
+  error into `409`.
+- `Job.maxSalary` carries a schema validator (`>= minSalary`); because a
+  validator only sees the field being written, `job.service` additionally
+  validates the **merged** document on partial updates.
+- A job is "accepting applications" only while `status: "open"` **and**
+  `expirationDate > now`; there is no scheduled job flipping statuses, so the
+  time component is part of every query and of the `isExpired` virtual.
+- Applications are never orphaned: deleting a job that has any is refused
+  (`409`), so `Application.job` always resolves.
+- Indexes follow the actual queries: `Job.{status, createdAt}` (public list),
+  `Job.{recruiter, createdAt}` (`/jobs/mine`), the text index for search,
+  `Application.{job, applicant}` (unique, and its `job` prefix serves lookups
+  by job), `Application.{job, createdAt}` and `Application.{applicant, createdAt}`
+  for the two list endpoints. The previous single-field `job`/`applicant`
+  indexes were dropped as redundant prefixes.
+
 ## Known, accepted trade-offs
 
 - `Job.list()`'s `role`/`location` filters use a case-insensitive regex,

@@ -12,6 +12,11 @@ const list = asyncHandler(async (req, res) => {
   paginated(res, items, pagination);
 });
 
+const listMine = asyncHandler(async (req, res) => {
+  const { items, pagination } = await jobService.listMine(req.user.id, req.query);
+  paginated(res, items, pagination);
+});
+
 const getById = asyncHandler(async (req, res) => {
   const job = await jobService.getById(req.params.id);
   ok(res, job);
@@ -27,4 +32,4 @@ const remove = asyncHandler(async (req, res) => {
   noContent(res);
 });
 
-module.exports = { create, list, getById, update, remove };
+module.exports = { create, list, listMine, getById, update, remove };
