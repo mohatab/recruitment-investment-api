@@ -45,8 +45,9 @@ result of fixing that; `AUDIT.md` describes what was actually wrong and why.
   refunds for payments that arrive after a round is full — payment
   state is never trusted from the client
 - Real-time notifications and authenticated direct messaging over Socket.IO
-- CV/image uploads with MIME + extension validation, pluggable storage
-  (local disk for dev, S3-compatible for production)
+- Private file storage: uploads are content-verified (magic bytes, not just
+  the declared type), stored under server-generated keys outside any served
+  directory, and readable only through authorized download endpoints
 - Centralized error handling, structured logging, rate limiting, Helmet,
   Mongo-injection sanitization, request correlation IDs
 - Swagger/OpenAPI docs at `/api-docs`
@@ -418,14 +419,89 @@ codebase and how each was fixed. Current posture:
 - Passwords hashed with bcrypt in a single shared `User` model; password
   hashes are never serialized in any API response (`select: false` +
   `toJSON` override)
-- File uploads: MIME + extension allowlist, 5MB limit, server-generated
-  filenames (client filenames are never used as a path)
+- File uploads: content (magic-byte) verification on top of the MIME +
+  extension allowlist, 5MB limit, server-generated storage keys (client
+  filenames and paths are never trusted), no public static file serving —
+  every download goes through an endpoint that checks authorization
 - Stripe: server never touches raw card numbers; payment confirmation is
   driven by a signature-verified webhook, not client input
 - One known accepted residual risk: a moderate `qs` advisory transitive
   through Express 4's own `body-parser` dependency (no non-breaking fix
   available upstream). Express 5 migration was evaluated and deliberately
   deferred — see [Express 4 vs 5](#express-4-vs-5) below for why.
+
+## Files and email
+
+### How files are stored
+
+Uploads are never served statically. `POST /api/v1/users/me/cv` and the
+contact form accept a multipart file, and the bytes take this path:
+
+1. `multer.memoryStorage()` buffers the file — nothing touches disk before it
+   has passed validation, so a rejected upload can never leave a partial file.
+2. The allowlist runs on the declared MIME type **and** the extension
+   (CV: `pdf`/`doc`/`docx`; image: `jpg`/`jpeg`/`png`/`webp`; 5MB; one file
+   per request). SVG and HTML are deliberately absent — browsers execute them.
+3. `common/utils/fileType.js` then checks the **magic bytes**, which the client
+   does not control. A `.exe` renamed `cv.pdf` and sent as `application/pdf`
+   passes steps 1–2 and is rejected here. Empty and truncated files too.
+4. The storage key is generated server-side: `${kind}/${randomUUID()}${ext}`.
+   The client's filename is kept only as a sanitized display name for the
+   download header; it never becomes part of a path.
+5. The storage driver (`common/storage/`) re-validates that the key resolves
+   inside the upload root before touching the filesystem.
+
+The database stores metadata only — `{ key, filename, contentType, sizeBytes,
+uploadedAt }` — and `toJSON` strips `key`, exposing a `downloadPath` instead.
+There is no public URL to leak, guess or share.
+
+### How files are read
+
+| Route                           | Who may read it                                                                             |
+| ------------------------------- | ------------------------------------------------------------------------------------------- |
+| `GET /api/v1/users/me/cv`       | the owner                                                                                   |
+| `GET /api/v1/users/:id/cv`      | the owner, an admin, or a recruiter who received an application from that user to their job |
+| `GET /api/v1/contact/:id/image` | admins only                                                                                 |
+
+Authorization is enforced in the service, on the request that actually reads
+the bytes — not by hiding the URL. Every file response is sent as
+`Content-Disposition: attachment` with `X-Content-Type-Options: nosniff` and
+`Cache-Control: private, no-store`, so nothing uploaded is ever rendered
+inline. A row whose file is missing is a 404 that names no filesystem path.
+
+### Storage drivers and Docker
+
+`STORAGE_DRIVER=local` (default) writes under `UPLOAD_DIR` (`./uploads`);
+`s3` uses any S3-compatible service. **The local driver needs a persistent
+volume**: `docker-compose.yml` mounts the `uploads` volume at `/app/uploads`, so
+files survive a container rebuild. Without a volume, every restart leaves
+metadata rows pointing at files that no longer exist — which degrades to a
+clean 404, not a crash. Multiple API replicas on the local driver each get
+their own disk and will 404 on each other's files; that is the point at which
+to switch to `s3`.
+
+### Email
+
+`SMTP_HOST` (+ `SMTP_PORT`) or `SMTP_SERVICE`, with `SMTP_USER`/`SMTP_PASS`
+and an optional `EMAIL_FROM`. Connection, greeting and socket timeouts are
+bounded (10s/10s/20s) so a hung mail server cannot tie up a request, and a
+failed send is retried once.
+
+**Failure semantics**: sending never throws and never fails the operation that
+triggered it. Registration commits the user and its verification token before
+the mail is dispatched; a password-reset request answers 200 regardless. A
+mail outage therefore costs a user a "resend", not their account or a
+misleading error. The trade-off is deliberate — a real outbox/queue is the
+next increment, and neither flow's guarantees depend on delivery.
+
+**What is never logged**: message bodies, subjects with tokens, recipients'
+full addresses, or SMTP credentials. A failure records only the subject, the
+recipient's _domain_, the error message, the attempt number and whether it
+will retry. Tokens travel in the URL _fragment_
+(`${APP_URL}/reset-password#token=...`), which browsers never send to a
+server, keeping them out of the client app's access logs and `Referer`
+headers. Every user-controlled value in an HTML mail is escaped
+(`common/services/email.templates.js`).
 
 ## Money and the investment lifecycle
 

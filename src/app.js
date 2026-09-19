@@ -10,7 +10,6 @@ const requestId = require("./common/middleware/requestId");
 const requestLogger = require("./common/middleware/requestLogger");
 const { apiLimiter } = require("./common/middleware/rateLimiter");
 const { errorHandler, notFound } = require("./common/middleware/errorHandler");
-const localStorage = require("./common/storage/localStorage");
 
 const authRoutes = require("./modules/auth/auth.routes");
 const userRoutes = require("./modules/users/user.routes");
@@ -55,7 +54,6 @@ app.use(express.json({ limit: "1mb" }));
 app.use(mongoSanitize()); // strips `$`/`.` keys from req.body/query/params — blocks NoSQL operator injection
 app.use(apiLimiter);
 
-app.use("/uploads", express.static(localStorage.rootDir));
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 app.use(`${API}/auth`, authRoutes);

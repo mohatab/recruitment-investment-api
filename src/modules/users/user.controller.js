@@ -1,10 +1,9 @@
 const userService = require("./user.service");
 const authService = require("../auth/auth.service");
 const asyncHandler = require("../../common/utils/asyncHandler");
-const { ok, paginated } = require("../../common/utils/response");
-const storage = require("../../common/storage");
-const { safeKey } = require("../../common/middleware/upload");
-const { ValidationError } = require("../../common/errors/AppError");
+const { ok, noContent, paginated } = require("../../common/utils/response");
+const { inspect } = require("../../common/middleware/upload");
+const { sendFile } = require("../../common/utils/fileResponse");
 
 const getMe = asyncHandler(async (req, res) => {
   const user = await userService.getById(req.user.id);
@@ -22,11 +21,24 @@ const changePassword = asyncHandler(async (req, res) => {
 });
 
 const uploadCv = asyncHandler(async (req, res) => {
-  if (!req.file) throw new ValidationError("No file uploaded — send one as multipart field `cv`");
-  const key = safeKey("cv", req.file.originalname);
-  await storage.save(key, req.file.buffer, req.file.mimetype);
-  const user = await userService.updateProfile(req.user.id, { cvUrl: storage.getUrl(key) });
+  const file = inspect(req.file, "cv");
+  const user = await userService.replaceCv(req.user.id, file);
   ok(res, user, "CV uploaded");
+});
+
+const downloadMyCv = asyncHandler(async (req, res) => {
+  sendFile(res, await userService.readCv(req.user.id, req.user));
+});
+
+// Same shape for someone else's CV; the service decides whether this requester
+// is entitled to it (owner, admin, or the recruiter they applied to).
+const downloadUserCv = asyncHandler(async (req, res) => {
+  sendFile(res, await userService.readCv(req.params.id, req.user));
+});
+
+const deleteMyCv = asyncHandler(async (req, res) => {
+  await userService.deleteCv(req.user.id);
+  noContent(res);
 });
 
 const getById = asyncHandler(async (req, res) => {
@@ -44,4 +56,15 @@ const list = asyncHandler(async (req, res) => {
   paginated(res, items, pagination);
 });
 
-module.exports = { getMe, updateMe, changePassword, uploadCv, getById, list, setStatus };
+module.exports = {
+  getMe,
+  updateMe,
+  changePassword,
+  uploadCv,
+  downloadMyCv,
+  downloadUserCv,
+  deleteMyCv,
+  getById,
+  list,
+  setStatus,
+};

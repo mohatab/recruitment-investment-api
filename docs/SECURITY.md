@@ -189,21 +189,55 @@ Admin is **not** a superuser: admin can do only the operations listed below.
   `test/unit/rate-limiter.test.js`.
 - **Request size limit**: `express.json({ limit: "1mb" })`.
 
-## File uploads
+## File uploads and downloads
 
-- MIME + extension allowlist per upload kind (CV: pdf/doc/docx; images:
-  jpg/png/webp), 5MB limit, `multer.memoryStorage()` so nothing touches
-  disk before validation runs (`common/middleware/upload.js`).
-- **Filenames are always server-generated**
-  (`crypto.randomUUID() + validated extension`) — the client's filename is
-  never used to construct a path, which is what rules out path traversal
-  or overwrite via a crafted filename.
-- **Known, accepted limitation**: validation checks declared MIME type +
-  extension, not file content (magic bytes). Sufficient for this project's
-  threat model (CV/profile-image uploads, not executable content); a
-  stronger control (content-type sniffing, e.g. via `file-type`, or virus
-  scanning) would be the next increment if this handled higher-risk
-  uploads at scale.
+Originally the upload directory was served by `express.static` at
+`/uploads`, so every CV — a résumé with a name, address and phone number —
+was readable by anyone with the URL, and uploads were validated only on
+values the client controls. Both are fixed; `test/integration/files.test.js`
+is the regression suite.
+
+**Accepting a file** (`common/middleware/upload.js`):
+
+- `multer.memoryStorage()` — nothing reaches disk before validation, so a
+  rejected upload cannot leave a partial file behind.
+- Allowlist per kind (CV: pdf/doc/docx; images: jpg/jpeg/png/webp), 5MB,
+  `files: 1`, bounded parts and field size. SVG and HTML are deliberately
+  excluded: browsers execute them.
+- **Content verification** (`common/utils/fileType.js`): the magic bytes must
+  agree with both the declared type and the extension. This is the check the
+  client cannot forge — an executable renamed `cv.pdf` and declared
+  `application/pdf` is rejected here, as are empty and truncated files.
+- A body that is not valid multipart at all (e.g. a null byte in the part
+  header) is a 400, not a 500.
+- **Storage keys are server-generated**: `${kind}/${randomUUID()}${ext}`.
+  Client filenames, client-supplied paths and any injected `key`/owner field
+  are ignored, which is what rules out traversal, absolute paths, null bytes,
+  reserved names, duplicate-name collisions and overwriting another user's
+  file — by construction rather than by sanitizing.
+- The filename is kept only as a display name for `Content-Disposition`,
+  stripped of separators and control characters.
+
+**Storing it** (`common/storage/`): the driver resolves every key against the
+upload root and refuses anything that escapes it — defense in depth, since
+keys are already generated. The upload directory is outside any served path;
+`express.static` is gone. A replacement writes the new file, updates the row,
+then deletes the old file; a failed write leaves the old CV referenced and
+intact.
+
+**Serving it** (`common/utils/fileResponse.js`): authorization is enforced in
+the service on the request that reads the bytes — owner, admin, or a recruiter
+who received an application from that user to one of their own jobs (the Task 4
+rule, not wider). Responses are always
+`Content-Disposition: attachment` + `X-Content-Type-Options: nosniff` +
+`Cache-Control: private, no-store`, so uploaded content is never rendered
+inline or sniffed into something executable. A missing file is a 404 that
+discloses no filesystem path, and storage keys are never serialized to
+clients.
+
+**Not done, deliberately**: virus/malware scanning (a ClamAV sidecar is the
+next increment if this ever accepted files from untrusted parties at scale)
+and deep format parsing — a PDF with a valid header is accepted as a PDF.
 
 ## Real-time (Socket.IO)
 

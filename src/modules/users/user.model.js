@@ -30,7 +30,20 @@ const userSchema = new mongoose.Schema(
       city: { type: String, trim: true, default: "" },
     },
 
-    cvUrl: { type: String, default: null },
+    // The stored CV: metadata plus the server-generated storage key. There is
+    // no public URL — the file is served by an authorized endpoint
+    // (GET /users/me/cv, GET /users/:id/cv), never by static hosting.
+    cv: {
+      type: {
+        _id: false,
+        key: { type: String, required: true },
+        filename: { type: String, required: true },
+        contentType: { type: String, required: true },
+        sizeBytes: { type: Number, required: true, min: 1 },
+        uploadedAt: { type: Date, required: true },
+      },
+      default: null,
+    },
     isActive: { type: Boolean, default: true },
     emailVerifiedAt: { type: Date, default: null },
     // Embedded in access tokens and stored on refresh tokens. Incrementing it
@@ -57,6 +70,8 @@ userSchema.methods.toJSON = function toJSON() {
   const obj = this.toObject();
   delete obj.password;
   delete obj.tokenVersion;
+  // The storage key is an internal identifier; clients use the download route.
+  if (obj.cv) obj.cv = { ...obj.cv, key: undefined, downloadPath: "/api/v1/users/me/cv" };
   delete obj.__v;
   if ("emailVerifiedAt" in obj) obj.emailVerified = Boolean(obj.emailVerifiedAt); // absent in projected public profiles
   return obj;

@@ -124,7 +124,7 @@ describe("user profile", () => {
     expect((await setStatus(admin.accessToken, "507f1f77bcf86cd799439011", { isActive: false })).status).toBe(404);
   });
 
-  test("uploading a CV sets cvUrl, and rejects a disallowed file type", async () => {
+  test("uploading a CV stores its metadata, and rejects a disallowed file type", async () => {
     const { accessToken } = await registerUser();
 
     const rejected = await request(app)
@@ -144,6 +144,13 @@ describe("user profile", () => {
         contentType: "application/pdf",
       });
     expect(accepted.status).toBe(200);
-    expect(accepted.body.data.cvUrl).toMatch(/\/uploads\/cv\//);
+    // No public URL any more: metadata plus an authorized download path, and
+    // the storage key is never exposed.
+    expect(accepted.body.data.cv).toMatchObject({
+      filename: "resume.pdf",
+      contentType: "application/pdf",
+      downloadPath: "/api/v1/users/me/cv",
+    });
+    expect(accepted.body.data.cv.key).toBeUndefined();
   });
 });

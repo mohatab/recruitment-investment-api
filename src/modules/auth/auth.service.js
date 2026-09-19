@@ -5,6 +5,7 @@ const RefreshToken = require("./refreshToken.model");
 const AuthToken = require("./authToken.model");
 const { signAccessToken, verifyAccessToken, generateRefreshToken, hashToken } = require("./jwt");
 const { sendEmail } = require("../../common/services/email.service");
+const templates = require("../../common/services/email.templates");
 const { getIO } = require("../../realtime/ioRegistry");
 const {
   AppError,
@@ -107,12 +108,10 @@ function sentRecently(userId, purpose) {
 // don't land in the client app's access logs or Referer headers.
 async function sendVerificationEmail(user) {
   const token = await issueEmailToken(user._id, "email_verification", VERIFY_TTL_MS);
-  // Not awaited: SMTP latency must not slow registration, and sendEmail never throws.
-  sendEmail({
-    to: user.email,
-    subject: "Confirm your email address",
-    text: `Confirm your email address (link valid for 24 hours): ${env.appUrl}/verify-email#token=${token}`,
-  });
+  // Not awaited: SMTP latency must not slow registration down, and sendEmail
+  // never throws. The token row is already committed, so a delivery failure
+  // costs the user a "resend", not their account.
+  sendEmail({ to: user.email, ...templates.verifyEmail({ firstName: user.firstName, token }) });
 }
 
 // ---------- public operations ----------
@@ -187,13 +186,7 @@ function forgotPassword(email) {
       if (!user || (await sentRecently(user._id, "password_reset"))) return;
 
       const token = await issueEmailToken(user._id, "password_reset", RESET_TTL_MS);
-      await sendEmail({
-        to: user.email,
-        subject: "Password reset request",
-        text:
-          `Reset your password (link valid for 1 hour): ${env.appUrl}/reset-password#token=${token}\n\n` +
-          "If you didn't request this, you can ignore this email.",
-      });
+      await sendEmail({ to: user.email, ...templates.resetPassword({ firstName: user.firstName, token }) });
     } catch (err) {
       logger.error("Password reset request failed", { error: err.message });
     }

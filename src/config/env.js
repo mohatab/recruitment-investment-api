@@ -51,6 +51,9 @@ const schema = Joi.object({
   STRIPE_WEBHOOK_SECRET: Joi.string().when("NODE_ENV", { is: "production", then: Joi.string().required() }),
 
   SMTP_HOST: Joi.string(),
+  SMTP_PORT: Joi.number().port().default(587),
+  // Envelope sender; defaults to the SMTP user when not set.
+  EMAIL_FROM: Joi.string(),
   SMTP_SERVICE: Joi.string(),
   SMTP_USER: Joi.string().when("NODE_ENV", { is: "production", then: Joi.string().required() }),
   SMTP_PASS: Joi.string().when("NODE_ENV", { is: "production", then: Joi.string().required() }),
@@ -101,7 +104,14 @@ function loadEnv(source = process.env) {
       refreshExpiresInDays: v.JWT_REFRESH_EXPIRES_IN_DAYS,
     },
     stripe: { secretKey: v.STRIPE_SECRET_KEY || "", webhookSecret: v.STRIPE_WEBHOOK_SECRET || "" },
-    email: { host: v.SMTP_HOST, service: v.SMTP_SERVICE, user: v.SMTP_USER, pass: v.SMTP_PASS },
+    email: {
+      host: v.SMTP_HOST,
+      port: v.SMTP_PORT,
+      service: v.SMTP_SERVICE,
+      user: v.SMTP_USER,
+      pass: v.SMTP_PASS,
+      from: v.EMAIL_FROM || v.SMTP_USER,
+    },
     storage: {
       driver: v.STORAGE_DRIVER,
       uploadDir: v.UPLOAD_DIR,

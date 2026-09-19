@@ -119,6 +119,27 @@ The per-route policy is declared in the OpenAPI spec (`security`,
 directions by tests (contract test against the routers, matrix test against
 the running app). The full rule table is in [SECURITY.md](./SECURITY.md#authorization).
 
+## File storage
+
+```
+POST /users/me/cv ──► multer (memory) ──► allowlist (MIME + extension)
+                                    └──► magic-byte check (utils/fileType)
+                                    └──► server-generated key: cv/<uuid>.pdf
+                                            │
+                          storage driver ───┴──► local disk (UPLOAD_DIR) or S3
+                                            │    (key re-validated against root)
+                            User.cv metadata ◄──┘  { key, filename, contentType,
+                                                     sizeBytes, uploadedAt }
+
+GET /users/:id/cv ──► authenticate ──► service authorization check
+                                  └──► storage.read(key) ──► attachment response
+```
+
+Physical location (the key, held only server-side) is separate from the
+metadata clients see (filename, type, size, `downloadPath`). Nothing is served
+statically, so there is no path that bypasses the authorization check, and
+switching drivers changes no stored data — the key is driver-independent.
+
 ## Real-time (Socket.IO)
 
 ```mermaid

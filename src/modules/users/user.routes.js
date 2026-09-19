@@ -62,7 +62,7 @@ router.post("/me/password", validate(schemas.changePassword), controller.changeP
  * /api/v1/users/me/cv:
  *   post:
  *     tags: [Users]
- *     summary: Upload/replace the current user's CV (PDF/DOC/DOCX, max 5MB)
+ *     summary: "Upload or replace the current user's CV. PDF/DOC/DOCX only, 5MB max; the file's magic bytes must match its declared type and extension. The previous file is deleted. Stored privately: it is never served from a static path, only from the download routes below."
  *     security: [{ BearerAuth: [] }]
  *     requestBody:
  *       required: true
@@ -76,6 +76,59 @@ router.post("/me/password", validate(schemas.changePassword), controller.changeP
  *       413: { $ref: '#/components/responses/PayloadTooLarge' }
  */
 router.post("/me/cv", uploadCv.single("cv"), controller.uploadCv);
+
+/**
+ * @swagger
+ * /api/v1/users/me/cv:
+ *   get:
+ *     tags: [Users]
+ *     summary: Download the current user's CV as an attachment
+ *     security: [{ BearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: The stored file, served as an attachment (never inline)
+ *         content:
+ *           application/pdf: { schema: { type: string, format: binary } }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       404: { $ref: '#/components/responses/NotFound' }
+ */
+router.get("/me/cv", controller.downloadMyCv);
+
+/**
+ * @swagger
+ * /api/v1/users/me/cv:
+ *   delete:
+ *     tags: [Users]
+ *     summary: Delete the current user's CV (file and metadata)
+ *     security: [{ BearerAuth: [] }]
+ *     responses:
+ *       204: { $ref: '#/components/responses/NoContent' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ */
+router.delete("/me/cv", controller.deleteMyCv);
+
+/**
+ * @swagger
+ * /api/v1/users/{id}/cv:
+ *   get:
+ *     tags: [Users]
+ *     summary: "Download another user's CV. Allowed for an admin, or for a recruiter who has received an application from that user to one of their own jobs; anyone else gets 403."
+ *     security: [{ BearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: The stored file, served as an attachment (never inline)
+ *         content:
+ *           application/pdf: { schema: { type: string, format: binary } }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
+ *       404: { $ref: '#/components/responses/NotFound' }
+ */
+router.get("/:id/cv", controller.downloadUserCv);
 
 /**
  * @swagger

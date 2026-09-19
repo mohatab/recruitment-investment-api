@@ -29,7 +29,25 @@ const entities = {
       nationality: { type: "string" },
       birthdate: { type: "string", format: "date-time", nullable: true },
       location: { type: "object", properties: { country: { type: "string" }, city: { type: "string" } } },
-      cvUrl: { type: "string", nullable: true },
+      cv: {
+        type: "object",
+        nullable: true,
+        description: "The stored CV. There is no public URL: fetch it from downloadPath, which enforces authorization.",
+        properties: {
+          filename: { type: "string" },
+          contentType: {
+            type: "string",
+            enum: [
+              "application/pdf",
+              "application/msword",
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ],
+          },
+          sizeBytes: { type: "integer" },
+          uploadedAt: { type: "string", format: "date-time" },
+          downloadPath: { type: "string", example: "/api/v1/users/me/cv" },
+        },
+      },
       isActive: { type: "boolean" },
       emailVerified: { type: "boolean" },
       emailVerifiedAt: { type: "string", format: "date-time", nullable: true },
@@ -255,7 +273,17 @@ const entities = {
       phoneNumber: { type: "string" },
       country: { type: "string" },
       city: { type: "string" },
-      profileImageUrl: { type: "string", nullable: true },
+      image: {
+        type: "object",
+        nullable: true,
+        description: "Attached photo; readable only by an admin through downloadPath",
+        properties: {
+          filename: { type: "string" },
+          contentType: { type: "string" },
+          sizeBytes: { type: "integer" },
+          downloadPath: { type: "string", example: "/api/v1/contact/{id}/image" },
+        },
+      },
       ...timestamps,
     },
   },
@@ -341,6 +369,7 @@ const LISTED = [
   "Message",
   "Conversation",
   "Experience",
+  "Contact",
 ];
 
 const schemas = { ...entities, Pagination };

@@ -85,7 +85,10 @@ describe("Swagger contract", () => {
       if (success.length === 0) return true;
       return success.some((code) => {
         const response = resolve(responses[code]);
-        return code === "204" ? Boolean(response.content) : !response.content?.["application/json"]?.schema;
+        if (code === "204") return Boolean(response.content);
+        // Any media type is fine (file downloads are not application/json),
+        // as long as the payload is described by a schema.
+        return !Object.values(response.content || {}).some((media) => media.schema);
       });
     });
     expect(wrong.map(label)).toEqual([]);

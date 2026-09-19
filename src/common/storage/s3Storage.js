@@ -1,8 +1,8 @@
 const env = require("../../config/env");
+const { NotFoundError } = require("../errors/AppError");
 
 // Lazily require the AWS SDK so a `local`-driver deployment never needs the
-// dependency resolved at import time (kept simple: it's still declared in
-// package.json since the S3 driver is a supported, first-class option).
+// dependency resolved at import time.
 let s3Client;
 function getClient() {
   if (!s3Client) {
@@ -23,24 +23,44 @@ function getClient() {
 async function save(key, buffer, contentType) {
   const { PutObjectCommand } = require("@aws-sdk/client-s3");
   await getClient().send(
-    new PutObjectCommand({
-      Bucket: env.storage.s3.bucket,
-      Key: key,
-      Body: buffer,
-      ContentType: contentType,
-    })
+    new PutObjectCommand({ Bucket: env.storage.s3.bucket, Key: key, Body: buffer, ContentType: contentType })
   );
   return key;
 }
 
-function getUrl(key) {
-  if (env.storage.s3.endpoint) return `${env.storage.s3.endpoint}/${env.storage.s3.bucket}/${key}`;
-  return `https://${env.storage.s3.bucket}.s3.${env.storage.s3.region}.amazonaws.com/${key}`;
+// Objects are read back through the API, never linked to directly: the bucket
+// stays private and authorization happens in this service, exactly as with the
+// local driver. That is also why there is no getUrl() any more — a public
+// object URL would bypass every check.
+async function read(key) {
+  const { GetObjectCommand } = require("@aws-sdk/client-s3");
+  try {
+    const result = await getClient().send(new GetObjectCommand({ Bucket: env.storage.s3.bucket, Key: key }));
+    return Buffer.from(await result.Body.transformToByteArray());
+  } catch {
+    throw new NotFoundError("File not found");
+  }
 }
 
+async function exists(key) {
+  const { HeadObjectCommand } = require("@aws-sdk/client-s3");
+  try {
+    await getClient().send(new HeadObjectCommand({ Bucket: env.storage.s3.bucket, Key: key }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Best-effort, like the local driver: an object that is already gone is not an
+// error worth failing a request over.
 async function remove(key) {
   const { DeleteObjectCommand } = require("@aws-sdk/client-s3");
-  await getClient().send(new DeleteObjectCommand({ Bucket: env.storage.s3.bucket, Key: key }));
+  try {
+    await getClient().send(new DeleteObjectCommand({ Bucket: env.storage.s3.bucket, Key: key }));
+  } catch {
+    // ignored
+  }
 }
 
-module.exports = { save, getUrl, remove };
+module.exports = { save, read, exists, remove };

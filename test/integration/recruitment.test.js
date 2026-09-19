@@ -5,6 +5,7 @@
 const { app, request, registerUser } = require("../helpers");
 const Job = require("../../src/modules/recruitment/jobs/job.model");
 const Application = require("../../src/modules/recruitment/applications/application.model");
+const env = require("../../src/config/env");
 
 const as = (who) => ({ Authorization: `Bearer ${who.accessToken}` });
 const future = (days = 30) => new Date(Date.now() + days * 864e5).toISOString();
@@ -277,7 +278,9 @@ describe("applying to a job", () => {
 
     const withCv = await applyTo(candidate, job._id, { resumeUrl: undefined });
     expect(withCv.status).toBe(201);
-    expect(withCv.body.data.resumeUrl).toBe(upload.body.data.cvUrl);
+    // The stored CV is referenced by its authorized download route, not by a
+    // public file URL.
+    expect(withCv.body.data.resumeUrl).toBe(`${env.baseUrl}/api/v1/users/${candidate.user._id}/cv`);
   });
 
   // Regression: a `javascript:` resumeUrl was stored and later handed to the

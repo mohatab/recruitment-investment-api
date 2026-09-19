@@ -4,6 +4,7 @@ const User = require("../../users/user.model");
 const notificationService = require("../../notifications/notification.service");
 const { NotFoundError, ConflictError, UnprocessableEntityError, CODES } = require("../../../common/errors/AppError");
 const assertOwner = require("../../../common/utils/assertOwner");
+const env = require("../../../config/env");
 const { parsePagination, buildPagination } = require("../../../common/utils/pagination");
 
 const SORTABLE = ["createdAt", "status"];
@@ -30,7 +31,11 @@ async function apply(jobId, applicantId, input) {
     throw new UnprocessableEntityError("This job posting has expired", CODES.JOB_EXPIRED);
   }
 
-  const resumeUrl = input.resumeUrl || (await User.findById(applicantId).select("cvUrl").lean())?.cvUrl;
+  // Either an external link the candidate supplied, or a pointer to their
+  // stored CV — which is an authorized endpoint, not a public file URL, so a
+  // recruiter still has to be entitled to it when they open it.
+  const storedCv = await User.findById(applicantId).select("cv").lean();
+  const resumeUrl = input.resumeUrl || (storedCv?.cv ? `${env.baseUrl}/api/v1/users/${applicantId}/cv` : undefined);
   if (!resumeUrl) {
     throw new UnprocessableEntityError("Upload a CV before applying, or provide a resumeUrl", CODES.RESUME_REQUIRED);
   }

@@ -1,4 +1,9 @@
 const User = require("./user.model");
+const Job = require("../recruitment/jobs/job.model");
+const Application = require("../recruitment/applications/application.model");
+const storage = require("../../common/storage");
+const ROLES = require("../../common/constants/roles");
+const { ForbiddenError } = require("../../common/errors/AppError");
 const authService = require("../auth/auth.service");
 const { NotFoundError, UnprocessableEntityError, CODES } = require("../../common/errors/AppError");
 const { parsePagination, buildPagination } = require("../../common/utils/pagination");
@@ -55,4 +60,76 @@ async function list(query) {
   return { items, pagination: buildPagination({ page, limit, total }) };
 }
 
-module.exports = { getById, getPublicProfile, updateProfile, setStatus, list, SORTABLE };
+// Replaces the stored CV, deleting the previous file. The database write
+// happens first: if it fails the old file is still referenced and nothing is
+// lost, and if the (best-effort) delete fails the worst case is an orphaned
+// file, not an unreachable CV.
+async function replaceCv(userId, { key, filename, contentType, sizeBytes, buffer }) {
+  const user = await getById(userId);
+  const previousKey = user.cv?.key;
+
+  await storage.save(key, buffer, contentType);
+  user.cv = { key, filename, contentType, sizeBytes, uploadedAt: new Date() };
+  try {
+    await user.save();
+  } catch (err) {
+    await storage.remove(key); // no metadata means the file is unreachable: drop it
+    throw err;
+  }
+
+  if (previousKey && previousKey !== key) await storage.remove(previousKey);
+  return user;
+}
+
+async function deleteCv(userId) {
+  const user = await getById(userId);
+  if (!user.cv) return false;
+
+  const { key } = user.cv;
+  user.cv = null;
+  await user.save();
+  await storage.remove(key);
+  return true;
+}
+
+// Who may download a CV:
+//   - its owner
+//   - an admin
+//   - a recruiter who received an application from that user to one of their
+//     own jobs (exactly the existing "recruiter reviews their applicants" rule
+//     from Task 4 — no wider)
+async function assertCanReadCv(targetUserId, requester) {
+  if (String(targetUserId) === String(requester.id)) return;
+  if (requester.role === ROLES.ADMIN) return;
+
+  if (requester.role === ROLES.RECRUITER) {
+    const jobIds = await Job.distinct("_id", { recruiter: requester.id });
+    if (jobIds.length && (await Application.exists({ applicant: targetUserId, job: { $in: jobIds } }))) return;
+  }
+  throw new ForbiddenError("You do not have permission to view this CV");
+}
+
+// Returns the file itself plus the metadata needed to serve it safely.
+async function readCv(targetUserId, requester) {
+  const user = await getById(targetUserId);
+  await assertCanReadCv(user._id, requester);
+  if (!user.cv) throw new NotFoundError("This user has not uploaded a CV");
+
+  // toObject(): spreading the subdocument itself would copy Mongoose internals
+  // (including a reference to the parent user) instead of the fields.
+  const { key, ...metadata } = user.cv.toObject();
+  return { ...metadata, buffer: await storage.read(key) };
+}
+
+module.exports = {
+  getById,
+  getPublicProfile,
+  updateProfile,
+  setStatus,
+  list,
+  replaceCv,
+  deleteCv,
+  readCv,
+  assertCanReadCv,
+  SORTABLE,
+};

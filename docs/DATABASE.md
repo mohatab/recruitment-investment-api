@@ -23,6 +23,29 @@ drag the whole history along with it).
 | `Message`      | A direct message                                                                   | `sender`/`receiver` → User             |
 | `Contact`      | Public contact-form submission                                                     | — (no account required)                |
 
+### Stored files
+
+`User.cv` and `Contact.image` are embedded metadata subdocuments — `{ key,
+filename, contentType, sizeBytes }` (+ `uploadedAt` on a CV) — not URLs. The
+`key` is the server-generated storage identifier and is stripped by `toJSON`;
+clients get a `downloadPath` to an authorized endpoint instead. Keeping the
+metadata separate from the physical path is what lets the storage driver
+change without touching stored data, and what keeps a file unreachable the
+moment its metadata is removed.
+
+Replacing a CV writes the new file first, then the row, then deletes the old
+file: a crash between steps costs at most an orphaned file, never an
+unreachable CV. Deleting removes the row's metadata first, so the file is
+unreferenced before it is unlinked.
+
+Existing rows that still hold a public URL (`User.cvUrl`,
+`Contact.profileImageUrl`) are converted by
+`scripts/migrate-file-urls-to-keys.js` (idempotent, `--dry-run` supported).
+The key is taken from the old `/uploads/...` URL and the size from the file
+itself, so only rows whose file is actually readable are migrated; an external
+or lost URL has the dead field removed and is reported, and that user
+re-uploads.
+
 ## Why one `User` model
 
 The original codebase had four: `mahmoud.User`, `matrix.user`,
