@@ -122,6 +122,23 @@ Admin is **not** a superuser: admin can do only the operations listed below.
   access (IDOR/BOLA) and client-supplied ownership/role/state fields for
   every resource above.
 
+## Payments
+
+- The webhook authenticates as **Stripe, by signature over the raw body**, not
+  as a user; it is the only unauthenticated write path and it accepts nothing
+  else. Missing, malformed, tampered or replayed signatures are refused with
+  400 before any domain code runs.
+- **Replay and double-processing** are blocked by a durable processed-event log
+  (unique Stripe event id) _and_ by idempotent domain transitions.
+- **Events are verified against the record**: the PaymentIntent must map to an
+  investment, and the event's amount and currency must match it, before money
+  state changes. Client-reported payment status is never accepted anywhere.
+- **Outbound calls are idempotent** (keys derived from the investment id), so a
+  retry cannot charge or refund twice.
+- **No Stripe secret, signature, payload or error message is logged or
+  returned.** Provider failures become a generic `502 PAYMENT_PROVIDER_ERROR`;
+  only the Stripe error type, code and request id go to the log.
+
 ## Recruitment rules that are also security controls
 
 - `resumeUrl` accepts **http(s) only**: a `javascript:` or `data:` URL would

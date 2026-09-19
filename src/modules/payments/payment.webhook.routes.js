@@ -1,6 +1,6 @@
 const express = require("express");
 const stripeService = require("./stripe.service");
-const investmentService = require("../investment/investments/investment.service");
+const paymentService = require("./payment.service");
 const logger = require("../../common/utils/logger");
 
 const router = express.Router();
@@ -10,33 +10,48 @@ const router = express.Router();
  * /api/v1/payments/webhook:
  *   post:
  *     tags: [Payments]
- *     summary: Stripe webhook — verifies the signature before trusting any payment status (not client-reported)
+ *     summary: "Stripe webhook. Authenticates by Stripe signature over the raw body, never by a user session. Delivery is at-least-once: every event id is recorded, so duplicates are acknowledged without reprocessing. Handles payment_intent.succeeded / payment_failed / canceled and charge.refunded; dispute events are logged without changing domain state. An event whose amount or currency disagrees with the stored investment is recorded and ignored."
  *     security: []
+ *     requestBody:
+ *       required: true
+ *       description: Raw Stripe event body (application/json), signed with the webhook secret
+ *       content:
+ *         application/json:
+ *           schema: { type: object }
+ *     parameters:
+ *       - in: header
+ *         name: stripe-signature
+ *         required: true
+ *         schema: { type: string }
  *     responses:
  *       200: { $ref: '#/components/responses/StripeWebhookAck' }
- *       400: { $ref: '#/components/responses/ValidationError' }
+ *       400: { description: "Missing, malformed, replayed or tampered signature; nothing is processed" }
+ *       500: { description: "Processing failed; Stripe retries the event" }
  */
 // Mounted with express.raw() (see app.js) *before* the global express.json()
-// parser — Stripe's signature is computed over the exact raw request body,
-// so it must never be parsed/re-serialized first.
+// parser — Stripe's signature is computed over the exact raw request body, so
+// it must never be parsed and re-serialized first.
 router.post("/webhook", async (req, res) => {
   let event;
   try {
     event = stripeService.constructWebhookEvent(req.body, req.headers["stripe-signature"]);
   } catch (err) {
-    logger.warn("Stripe webhook signature verification failed", { error: err.message });
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+    // The signature (and the body it signs) is never logged.
+    logger.warn("Stripe webhook signature verification failed", { reason: err.type || "invalid_signature" });
+    return res.status(400).json({ received: false });
   }
 
   try {
-    if (event.type === "payment_intent.succeeded") {
-      await investmentService.handlePaymentIntentSucceeded(event.data.object.id);
-    } else if (event.type === "payment_intent.payment_failed") {
-      await investmentService.handlePaymentIntentFailed(event.data.object.id);
-    }
+    const result = await paymentService.handleEvent(event);
+    logger.info("Stripe webhook processed", {
+      eventId: event.id,
+      type: event.type,
+      outcome: result.duplicate ? "duplicate" : result.outcome,
+    });
     res.json({ received: true });
   } catch (err) {
-    logger.error("Error processing Stripe webhook", { error: err.message, eventType: event.type });
+    // 5xx makes Stripe redeliver, which is what we want for a transient fault.
+    logger.error("Stripe webhook processing failed", { eventId: event.id, type: event.type, error: err.message });
     res.status(500).json({ received: false });
   }
 });

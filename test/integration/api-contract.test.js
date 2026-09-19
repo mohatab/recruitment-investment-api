@@ -85,16 +85,16 @@ describe("success envelope", () => {
     expect((await request(app).put("/api/v1/startups/me").set(auth(founder.accessToken)).send(body)).status).toBe(200);
   });
 
-  test("the Stripe webhook keeps Stripe's response shape, not the envelope", async () => {
+  test("the Stripe webhook answers in Stripe's shape, not the envelope, and never echoes the error", async () => {
     const res = await request(app)
       .post("/api/v1/payments/webhook")
       .set("Content-Type", "application/json")
       .send(JSON.stringify({ type: "payment_intent.succeeded" }));
-    // No valid signature here, so it's a 400 — the point is that it is not our
-    // JSON envelope but Stripe's plain-text error.
+    // Unsigned, so it is refused — the point is the shape: no { success, error,
+    // requestId } envelope, and no Stripe detail echoed back to the caller.
     expect(res.status).toBe(400);
+    expect(res.body).toEqual({ received: false });
     expect(res.body.success).toBeUndefined();
-    expect(res.text).toMatch(/Webhook Error/);
   });
 });
 

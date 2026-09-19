@@ -75,10 +75,11 @@ none were added speculatively.
 
 - `User.email` — unique (login lookup, duplicate-registration check)
 - `User.role` — admin user-listing filter
-- `Job.{recruiter}`, `Job.{status, expirationDate}` (compound), `Job.{title, role, tags}` (text) — owner lookups, the default "open, not expired" list filter, and free-text search
-- `Application.{job, applicant}` — **unique**, the duplicate-prevention constraint; also serves job-scoped and applicant-scoped lookups since both fields are index prefixes
-- `Startup.{owner}` — unique; `Startup.{industries, stage}` — the matching-endpoint filter
-- `Investment.{investor}`, `Investment.{startup}`, `Investment.{stripePaymentIntentId}` (unique, sparse) — the webhook's lookup key
+- `Job.{status, createdAt}` (public list, newest first), `Job.{recruiter, createdAt}` (`/jobs/mine`), `Job.{title, role, tags}` (text) — free-text search
+- `Application.{job, applicant}` — **unique**, the duplicate-prevention constraint (its `job` prefix also serves lookups by job); `Application.{job, createdAt}` and `Application.{applicant, createdAt}` — the two list endpoints
+- `Startup.{owner}` — unique; `Startup.{industries, stage}` — the browse/matching filter
+- `Investment.{investor, createdAt}` and `Investment.{startup, createdAt}` — the two list endpoints; `Investment.{stripePaymentIntentId}` (unique, sparse) — the webhook's lookup key
+- `StripeEvent.{eventId}` — unique, the webhook idempotency guarantee; `StripeEvent.{investment, createdAt}` — per-investment payment history; `StripeEvent.{createdAt}` — TTL, 90-day retention
 - `Notification.{user, createdAt}` and `Notification.{targetRole, createdAt}` — `listMine` queries `$or: [{user}, {targetRole}]` sorted by `createdAt`; Mongo satisfies an `$or` by index union, running each branch against its own index, so each branch gets its own compound index with the sort key included, rather than one lone single-field index per branch that can't also serve the sort
 - `Message.{roomId, createdAt}` — every message query filters by `roomId` and sorts by `createdAt`; this single compound index serves both (a separate single-field index on `roomId` alone would be redundant, since this compound index's `roomId`-only prefix already serves a `roomId`-alone query — an earlier version of this schema had exactly that redundant index, removed once the query patterns were checked against it)
 - `RefreshToken`/`AuthToken.{expiresAt}` — TTL indexes for automatic expiry; `AuthToken.{user, purpose, createdAt}` serves the supersede and cooldown lookups
@@ -103,6 +104,19 @@ none were added speculatively.
 - Existing float amounts are converted by
   `scripts/migrate-money-to-minor-units.js` (idempotent, supports `--dry-run`,
   and reports any value that was not a whole number of cents).
+
+## Payment event log
+
+- `StripeEvent.eventId` is **unique**: Stripe delivers at least once, and the
+  unique index is what makes a duplicate (or concurrent) delivery a no-op
+  rather than a second credit. A failed processing attempt deletes its claim so
+  a Stripe retry can reprocess the event.
+- `StripeEvent.{investment, createdAt}` supports "what happened to this
+  investment's payments", and a TTL index on `createdAt` expires records after
+  90 days — far longer than Stripe's own retry window.
+- `Investment.stripeRefundId` / `autoRefundedAt` record money going back, from
+  an admin refund, a dashboard refund reconciled through `charge.refunded`, or
+  the automatic refund of an uncreditable payment.
 
 ## Recruitment constraints
 

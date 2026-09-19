@@ -71,14 +71,8 @@ async function create(investorUserId, { startupId, amountCents }) {
 
   const investment = await Investment.create({ investor: investorUserId, startup: startup._id, amountCents });
   try {
-    const paymentIntent = await stripeService.createPaymentIntent({
-      amountCents,
-      currency: investment.currency,
-      metadata: { investmentId: String(investment._id) },
-    });
-    investment.stripePaymentIntentId = paymentIntent.id;
-    await investment.save();
-    return { investment, clientSecret: paymentIntent.client_secret };
+    const { paymentIntent, investment: withIntent } = await ensurePaymentIntent(investment);
+    return { investment: withIntent, clientSecret: paymentIntent.client_secret };
   } catch (err) {
     // Without a PaymentIntent nothing can ever be collected: record the attempt
     // as failed and give the capacity back instead of holding the round hostage.
@@ -86,6 +80,40 @@ async function create(investorUserId, { startupId, amountCents }) {
     await releaseReservation(startup._id, amountCents);
     throw err;
   }
+}
+
+// Creates the PaymentIntent for an investment, at most once. The idempotency
+// key is derived from the investment id, so a retry after a timeout returns
+// Stripe's original PaymentIntent instead of charging the customer twice, and
+// the id is persisted with a conditional update so a concurrent writer cannot
+// overwrite it. Creating the intent says nothing about payment: the investment
+// stays "pending" until a signed webhook says otherwise.
+async function ensurePaymentIntent(investment) {
+  if (investment.stripePaymentIntentId) {
+    return { paymentIntent: await stripeService.retrievePaymentIntent(investment.stripePaymentIntentId), investment };
+  }
+
+  const paymentIntent = await stripeService.createPaymentIntent({
+    amountCents: investment.amountCents,
+    currency: investment.currency,
+    metadata: { investmentId: String(investment._id) },
+    idempotencyKey: `investment-${investment._id}`,
+  });
+
+  const claimed = await Investment.findOneAndUpdate(
+    { _id: investment._id, stripePaymentIntentId: null },
+    { stripePaymentIntentId: paymentIntent.id },
+    { new: true }
+  );
+  if (claimed) return { paymentIntent, investment: claimed };
+
+  // Someone else stored one first; theirs wins (the idempotency key means it
+  // is the same PaymentIntent anyway).
+  const current = await Investment.findById(investment._id);
+  return {
+    paymentIntent: await stripeService.retrievePaymentIntent(current.stripePaymentIntentId),
+    investment: current,
+  };
 }
 
 // Payment confirmed. Idempotent, and safe to call for an investment that
@@ -174,7 +202,13 @@ async function refund(investmentId) {
   }
 
   try {
-    await stripeService.refundPaymentIntent(claimed.stripePaymentIntentId);
+    // Keyed on the investment: a retried admin refund is the same refund.
+    const refund = await stripeService.createRefund({
+      paymentIntentId: claimed.stripePaymentIntentId,
+      idempotencyKey: `refund-${investmentId}`,
+    });
+    claimed.stripeRefundId = refund.id;
+    await Investment.updateOne({ _id: investmentId }, { stripeRefundId: refund.id });
   } catch (err) {
     await Investment.updateOne({ _id: investmentId, status: "refunded" }, { status: "paid" });
     throw err;
@@ -187,6 +221,34 @@ async function refund(investmentId) {
   return claimed;
 }
 
+// Reconciles a refund that already happened at Stripe (admin refund, a refund
+// issued in the dashboard, or the automatic one). Never calls Stripe — the
+// money has moved; this only brings the domain in line, once.
+async function markRefunded(investmentId, { stripeRefundId } = {}) {
+  const refunded = await Investment.findOneAndUpdate(
+    { _id: investmentId, status: "paid" },
+    { status: "refunded", ...(stripeRefundId ? { stripeRefundId } : {}) },
+    { new: true }
+  );
+  if (!refunded) return { investment: await Investment.findById(investmentId), refunded: false };
+
+  await Startup.updateOne(
+    { _id: refunded.startup, raisedSoFarCents: { $gte: refunded.amountCents } },
+    { $inc: { raisedSoFarCents: -refunded.amountCents } }
+  );
+  return { investment: refunded, refunded: true };
+}
+
+// A payment that could not be credited (the round filled up first) was
+// refunded at Stripe. The investment stays "failed" — it never held capacity
+// or money — but the refund is recorded so the two sides reconcile.
+async function recordAutoRefund(investmentId, stripeRefundId) {
+  await Investment.updateOne(
+    { _id: investmentId, autoRefundedAt: null },
+    { stripeRefundId, autoRefundedAt: new Date() }
+  );
+}
+
 async function announceInvestment(investment) {
   const startup = await Startup.findById(investment.startup).select("owner").lean();
   if (!startup) return;
@@ -194,26 +256,6 @@ async function announceInvestment(investment) {
     startup.owner,
     `New investment of ${money.format(investment.amountCents, investment.currency)} received`
   );
-}
-
-// --- Stripe webhook adapters (Task 8 replaces the plumbing, not these rules) ---
-
-async function handlePaymentIntentSucceeded(paymentIntentId) {
-  const investment = await Investment.findOne({ stripePaymentIntentId: paymentIntentId }).select("_id").lean();
-  if (!investment) {
-    logger.warn("Webhook ignored: unknown payment intent", { paymentIntentId });
-    return { credited: false, reason: "unknown" };
-  }
-  return markPaid(investment._id);
-}
-
-async function handlePaymentIntentFailed(paymentIntentId) {
-  const investment = await Investment.findOne({ stripePaymentIntentId: paymentIntentId }).select("_id").lean();
-  if (!investment) {
-    logger.warn("Webhook ignored: unknown payment intent", { paymentIntentId });
-    return { released: false };
-  }
-  return markFailed(investment._id);
 }
 
 async function listMine(investorUserId, query) {
@@ -242,11 +284,12 @@ async function listFor(filter, query, populate) {
 module.exports = {
   SORTABLE,
   create,
+  ensurePaymentIntent,
   markPaid,
   markFailed,
+  markRefunded,
+  recordAutoRefund,
   refund,
-  handlePaymentIntentSucceeded,
-  handlePaymentIntentFailed,
   listMine,
   listForStartupOwner,
 };

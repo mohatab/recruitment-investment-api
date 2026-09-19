@@ -29,6 +29,7 @@ router.use(authenticate);
  *       403: { $ref: '#/components/responses/Forbidden' }
  *       404: { $ref: '#/components/responses/NotFound' }
  *       422: { $ref: '#/components/responses/UnprocessableEntity' }
+ *       502: { $ref: '#/components/responses/BadGateway' }
  */
 router.post("/", authorize(ROLES.INVESTOR), requireVerifiedEmail, validate(schemas.create), controller.create);
 
@@ -76,7 +77,7 @@ router.get("/startup", authorize(ROLES.STARTUP), validate(schemas.list, "query")
  * /api/v1/investments/{id}/refund:
  *   post:
  *     tags: [Investments]
- *     summary: Refund a paid investment (admin only — investors cannot reclaim money already credited to a startup)
+ *     summary: "Refund a paid investment (admin only). The refund is idempotent: the status is claimed before Stripe is called, so concurrent requests refund once, and a Stripe failure leaves the investment paid."
  *     security: [{ BearerAuth: [] }]
  *     x-required-roles: [admin]
  *     parameters:
@@ -91,6 +92,7 @@ router.get("/startup", authorize(ROLES.STARTUP), validate(schemas.list, "query")
  *       403: { $ref: '#/components/responses/Forbidden' }
  *       404: { $ref: '#/components/responses/NotFound' }
  *       422: { $ref: '#/components/responses/UnprocessableEntity' }
+ *       502: { $ref: '#/components/responses/BadGateway' }
  */
 router.post("/:id/refund", authorize(ROLES.ADMIN), controller.refund);
 

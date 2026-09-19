@@ -96,9 +96,9 @@ Authorization for every route is declared in Swagger (`security`, `x-required-ro
 
 ## Payments (`/api/v1/payments`) — no auth (verified by Stripe signature instead)
 
-| Method | Path       | Auth                                         | Body                  | Success                                                                                                                             | Distinguishing errors | Test                       | Swagger |
-| ------ | ---------- | -------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------- | ------- |
-| POST   | `/webhook` | Stripe signature (`stripe-signature` header) | raw Stripe event JSON | 200 `{received:true}`; `payment_intent.succeeded`/`.payment_failed` handled, others ignored; idempotent (atomic conditional update) | 400 invalid signature | `payments-webhook.test.js` | ✅      |
+| Method | Path       | Auth                                                 | Body                  | Success                                                                                                                             | Distinguishing errors | Test                       | Swagger |
+| ------ | ---------- | ---------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------- | ------- |
+| POST   | `/webhook` | Stripe signature over the raw body (no user session) | raw Stripe event JSON | 200 `{received:true}`; `payment_intent.succeeded`/`.payment_failed` handled, others ignored; idempotent (atomic conditional update) | 400 invalid signature | `payments-webhook.test.js` | ✅      |
 
 ## Notifications (`/api/v1/notifications`)
 

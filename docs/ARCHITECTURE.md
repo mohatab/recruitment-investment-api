@@ -212,11 +212,15 @@ Deliberate choices, because payment workflows get these wrong elsewhere:
 Money is integer minor units end to end — see `common/utils/money.js` and the
 README's "Money and the investment lifecycle".
 
-**Task boundary.** This task (7) owns the domain rules above and the
-`markPaid` / `markFailed` / `refund` interface. Task 8 owns Stripe itself:
-processed-event log, outbound idempotency keys, amount/currency verification,
-`charge.refunded` and disputes. Until then the webhook is signature-verified
-but its bookkeeping is not complete.
+**Layering.** The investment module owns the domain rules above and the
+`markPaid` / `markFailed` / `markRefunded` / `refund` interface; nothing
+outside it writes payment status or funding totals. The payments module owns
+Stripe: signature verification, the `StripeEvent` log that makes at-least-once
+delivery harmless, outbound idempotency keys, verification of each event
+against the stored investment, refund reconciliation, and the automatic refund
+of a payment that arrives after a round is full. Provider failures become
+`502 PAYMENT_PROVIDER_ERROR`; Stripe detail never reaches a client or a log
+line. See the README's "Payments (Stripe)" for the event table and trust model.
 
 ## API contract
 

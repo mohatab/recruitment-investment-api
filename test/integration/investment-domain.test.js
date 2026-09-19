@@ -9,7 +9,8 @@ jest.mock("../../src/modules/payments/stripe.service", () => ({
     amount: amountCents,
     currency,
   })),
-  refundPaymentIntent: jest.fn(async () => ({ id: "re_test", status: "succeeded" })),
+  createRefund: jest.fn(async () => ({ id: "re_test", status: "succeeded" })),
+  retrievePaymentIntent: jest.fn(async (id) => ({ id, client_secret: "cs_test" })),
   constructWebhookEvent: jest.fn(),
 }));
 
@@ -192,7 +193,7 @@ describe("concurrency", () => {
     const { body } = await invest(investor, startup._id, USD(300));
     const id = body.data.investment._id;
     await investmentService.markPaid(id);
-    stripeService.refundPaymentIntent.mockClear();
+    stripeService.createRefund.mockClear();
 
     const admin = await createAdmin();
     const results = await Promise.all(
@@ -201,7 +202,7 @@ describe("concurrency", () => {
 
     expect(results.filter((r) => r.status === 200)).toHaveLength(1);
     expect(results.filter((r) => r.status === 422)).toHaveLength(3);
-    expect(stripeService.refundPaymentIntent).toHaveBeenCalledTimes(1);
+    expect(stripeService.createRefund).toHaveBeenCalledTimes(1);
     expect((await Investment.findById(id)).status).toBe("refunded");
     expect(await funding(startup._id)).toEqual({ raised: 0, reserved: 0, remaining: 100000 });
   });
@@ -289,9 +290,10 @@ describe("state machine", () => {
     expect(await funding(startup._id)).toEqual({ raised: 0, reserved: 0, remaining: 100000 });
   });
 
-  test("an unknown payment intent is ignored by both webhook adapters", async () => {
-    expect(await investmentService.handlePaymentIntentSucceeded("pi_nope")).toMatchObject({ reason: "unknown" });
-    expect(await investmentService.handlePaymentIntentFailed("pi_nope")).toMatchObject({ released: false });
+  test("marking an unknown investment paid or failed is a no-op", async () => {
+    const missing = "507f1f77bcf86cd799439011";
+    expect(await investmentService.markPaid(missing)).toMatchObject({ credited: false, reason: "unknown" });
+    expect(await investmentService.markFailed(missing)).toMatchObject({ released: false });
   });
 
   test("a Stripe failure during creation leaves no reservation behind", async () => {
@@ -327,11 +329,11 @@ describe("refund rules", () => {
   test("a refunded investment cannot be refunded twice", async () => {
     await investmentService.markPaid(investmentId);
     await refund(admin).expect(200);
-    stripeService.refundPaymentIntent.mockClear();
+    stripeService.createRefund.mockClear();
 
     const second = await refund(admin);
     expect(second.status).toBe(422);
-    expect(stripeService.refundPaymentIntent).not.toHaveBeenCalled();
+    expect(stripeService.createRefund).not.toHaveBeenCalled();
     expect((await funding(startup._id)).raised).toBe(0);
   });
 
@@ -346,7 +348,7 @@ describe("refund rules", () => {
 
   test("if Stripe refuses the refund, the investment stays paid and the startup keeps the money", async () => {
     await investmentService.markPaid(investmentId);
-    stripeService.refundPaymentIntent.mockRejectedValueOnce(new Error("charge already refunded"));
+    stripeService.createRefund.mockRejectedValueOnce(new Error("charge already refunded"));
 
     const res = await refund(admin);
     expect(res.status).toBe(500);

@@ -27,6 +27,7 @@ module.exports = {
   UNSUPPORTED_MEDIA_TYPE: "UNSUPPORTED_MEDIA_TYPE",
   TOO_MANY_REQUESTS: "TOO_MANY_REQUESTS",
   INTERNAL_ERROR: "INTERNAL_ERROR",
+  PAYMENT_PROVIDER_ERROR: "PAYMENT_PROVIDER_ERROR", // 502: Stripe refused or was unreachable
 
   // 422 — syntactically valid, but the domain refuses it
   JOB_CLOSED: "JOB_CLOSED",

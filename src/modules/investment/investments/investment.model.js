@@ -35,6 +35,13 @@ const investmentSchema = new mongoose.Schema(
     // Unique + sparse: one investment per PaymentIntent, and the field is
     // absent until Stripe hands us an id.
     stripePaymentIntentId: { type: String, unique: true, sparse: true },
+    // Set when money goes back, by an admin refund, a refund made in the
+    // Stripe dashboard, or the automatic refund of a payment that arrived
+    // after the round was full.
+    stripeRefundId: { type: String },
+    // Stamped only for that automatic refund: the investment stays "failed"
+    // (it was never credited) but the money was captured and returned.
+    autoRefundedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

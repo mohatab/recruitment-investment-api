@@ -40,7 +40,9 @@ result of fixing that; `AUDIT.md` describes what was actually wrong and why.
 - Job posting, search/filtering/pagination, and a full application lifecycle
   with enforced status transitions and duplicate-application prevention
 - Startup fundraising profiles, investor criteria, and a matching endpoint
-- Stripe-backed investments with a **signature-verified webhook** — payment
+- Stripe-backed investments with a **signature-verified webhook**, idempotent
+  PaymentIntent creation and refunds, a processed-event log, and automatic
+  refunds for payments that arrive after a round is full — payment
   state is never trusted from the client
 - Real-time notifications and authenticated direct messaging over Socket.IO
 - CV/image uploads with MIME + extension validation, pluggable storage
@@ -542,6 +544,53 @@ bookkeeping (a processed-event log), the outbound idempotency key on
 PaymentIntent creation, verifying event amount and currency against the
 record, `charge.refunded` and dispute events, and retry behaviour. Payment
 processing is **not** production-complete until Task 8 lands.
+
+## Payments (Stripe)
+
+The server never touches card data: it creates a **PaymentIntent** and returns
+its `clientSecret` for the client to confirm with Stripe.js. An investment
+becomes `paid` only when Stripe's **signature-verified webhook** says so — a
+client's "it worked" is never trusted, and creating a PaymentIntent proves
+nothing about payment.
+
+**Idempotency.** Both outbound calls carry a key derived from the investment
+id (`investment-<id>`, `refund-<id>`, `auto-refund-<id>`), so a retry after a
+timeout returns Stripe's original object instead of charging or refunding
+twice. The PaymentIntent id is stored with a conditional update, so concurrent
+creation for one investment settles on a single id.
+
+**Webhook trust model.** `POST /api/v1/payments/webhook` authenticates by
+Stripe signature over the raw body (it takes no user session, and a bearer
+token neither helps nor is required). Stale signatures are rejected by Stripe's
+own tolerance window, which is what stops replay. Every accepted event is
+claimed in a `StripeEvent` log keyed by the unique Stripe event id: duplicate
+and concurrent deliveries are acknowledged without reprocessing, and a failed
+attempt releases its claim so Stripe's retry can run again. Before any state
+moves, the event's PaymentIntent, **amount and currency are compared with the
+stored investment**; a mismatch is recorded and ignored.
+
+| Event                                                      | Effect                                                                                                            |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `payment_intent.succeeded`                                 | credit the investment (`pending`/`failed` → `paid`)                                                               |
+| `payment_intent.payment_failed`, `payment_intent.canceled` | release the reservation (→ `failed`, still revivable)                                                             |
+| `charge.refunded`                                          | reconcile a refund made anywhere, including the Stripe dashboard (`paid` → `refunded`)                            |
+| `charge.dispute.created`, `charge.dispute.closed`          | **observed and logged only** — the domain has no disputed state, and inventing one is not this product's rule yet |
+| anything else                                              | acknowledged and recorded as `no_change`                                                                          |
+
+**Late payments.** If a payment is confirmed after the round has filled up,
+Task 7's cap keeps it uncredited — and Task 8 then **refunds it automatically**
+(idempotently) and stamps `autoRefundedAt` and `stripeRefundId`. The
+investment stays `failed`, and `raisedSoFarCents` never exceeds
+`totalRaisingCents`.
+
+**Refunds** stay admin-only. The status is claimed before Stripe is called, so
+concurrent refunds reach Stripe once; if Stripe refuses, the claim is rolled
+back and the investment stays `paid`. A partial refund has no domain
+representation, so it is logged for an operator rather than guessed at.
+
+**Provider failures** surface as `502 PAYMENT_PROVIDER_ERROR` — an actionable
+upstream failure, not a generic 500 — and no Stripe message, key, request
+payload or signature is ever logged or returned.
 
 ## Database design
 

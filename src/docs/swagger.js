@@ -133,8 +133,8 @@ const entities = {
       criteria: {
         type: "object",
         properties: {
-          minInvestment: { type: "number" },
-          maxInvestment: { type: "number" },
+          minInvestmentCents: { type: "integer" },
+          maxInvestmentCents: { type: "integer" },
           industries: { type: "array", items: { type: "string" } },
           stages: { type: "array", items: { type: "string", enum: STAGES } },
           locations: { type: "array", items: { type: "string" } },
@@ -176,6 +176,14 @@ const entities = {
           "pending (capacity reserved) -> paid | failed; failed -> paid on a successful retry; paid -> refunded (admin only). Only a signature-verified Stripe webhook moves an investment past pending.",
       },
       stripePaymentIntentId: { type: "string" },
+      stripeRefundId: { type: "string", description: "Set once money has been returned, by any refund path" },
+      autoRefundedAt: {
+        type: "string",
+        format: "date-time",
+        nullable: true,
+        description:
+          "Set when a payment arrived after the round was already full: it was refunded automatically and never credited, so the investment stays failed",
+      },
       ...timestamps,
     },
   },
@@ -390,6 +398,8 @@ const options = {
         "",
         "**Versioning** — every endpoint lives under `/api/v1`. The health probes (`/health`, `/health/ready`) sit outside the version prefix: they are infrastructure endpoints, not part of the product API.",
         "",
+        "**Payments** — investments are charged through Stripe. Creating an investment reserves capacity and returns a PaymentIntent `clientSecret` to confirm client-side; the investment becomes `paid` only when Stripe's signature-verified webhook says so. PaymentIntent creation and refunds are idempotent (keys derived from the investment id), and duplicate webhook deliveries are ignored through a processed-event log.",
+        "",
         `**Money** — every monetary field is an integer number of minor units (cents for USD, the only supported currency) and carries a \`Cents\` suffix. Amounts are never floats: \`10.005\` is rejected, not rounded.`,
         "",
         `**Responses** — JSON bodies are \`{ success, data, message }\`; list endpoints add \`pagination\` ({page, limit, total, totalPages}, limit max ${MAX_LIMIT}). \`204\` responses have no body. The Stripe webhook answers in Stripe's own format, not this envelope.`,
@@ -571,6 +581,9 @@ const options = {
         UnprocessableEntity: error("A business rule refused a well-formed request (see the error code)"),
         PayloadTooLarge: error("PAYLOAD_TOO_LARGE — body over 1mb, or an upload over 5MB"),
         TooManyRequests: error("TOO_MANY_REQUESTS — rate limit exceeded"),
+        BadGateway: error(
+          "PAYMENT_PROVIDER_ERROR — Stripe refused the request or was unreachable. No money moved; the request can be retried, and retries are idempotent."
+        ),
       },
     },
     // No global default: every operation declares `security` explicitly
