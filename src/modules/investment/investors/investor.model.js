@@ -17,9 +17,11 @@ const investorSchema = new mongoose.Schema(
 
     // What "the system finds relevant opportunities" (GET /startups/matches)
     // filters against.
+    // Ticket sizes in integer minor units (cents), matched against a
+    // startup's minInvestmentCents.
     criteria: {
-      minInvestment: { type: Number, default: 0, min: 0 },
-      maxInvestment: { type: Number, default: Number.MAX_SAFE_INTEGER, min: 0 },
+      minInvestmentCents: { type: Number, default: 0, min: 0 },
+      maxInvestmentCents: { type: Number, default: Number.MAX_SAFE_INTEGER, min: 0 },
       industries: { type: [String], default: [] },
       stages: { type: [String], enum: STAGES, default: [] },
       locations: { type: [String], default: [] },

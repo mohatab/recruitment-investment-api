@@ -16,12 +16,12 @@ jest.mock("../../src/modules/payments/stripe.service", () => ({
 const { app, request, registerUser, createAdmin } = require("../helpers");
 const Startup = require("../../src/modules/investment/startups/startup.model");
 
-async function setupInvestment(amount = 200) {
+async function setupInvestment(amountCents = 20000) {
   const startupOwner = await registerUser({ role: "startup" });
   await request(app)
     .put("/api/v1/startups/me")
     .set("Authorization", `Bearer ${startupOwner.accessToken}`)
-    .send({ name: "Acme", description: "desc", totalRaising: 10000, minInvestment: 100 });
+    .send({ name: "Acme", description: "desc", totalRaisingCents: 1000000, minInvestmentCents: 10000 });
   const startupId = (
     await request(app).get("/api/v1/startups/me").set("Authorization", `Bearer ${startupOwner.accessToken}`)
   ).body.data._id;
@@ -30,7 +30,7 @@ async function setupInvestment(amount = 200) {
   const createRes = await request(app)
     .post("/api/v1/investments")
     .set("Authorization", `Bearer ${investor.accessToken}`)
-    .send({ startupId, amount });
+    .send({ startupId, amountCents });
 
   return { startupId, startupOwner, investment: createRes.body.data.investment, investor };
 }
@@ -49,10 +49,10 @@ describe("Stripe webhook", () => {
   });
 
   test("marks the investment paid and credits the startup on payment_intent.succeeded", async () => {
-    const { startupId, investment } = await setupInvestment(200);
+    const { startupId, investment } = await setupInvestment(20000);
 
     const before = await request(app).get(`/api/v1/startups/${startupId}`);
-    expect(before.body.data.raisedSoFar).toBe(0);
+    expect(before.body.data.raisedSoFarCents).toBe(0);
 
     const webhookRes = await sendWebhook({
       type: "payment_intent.succeeded",
@@ -61,22 +61,22 @@ describe("Stripe webhook", () => {
     expect(webhookRes.status).toBe(200);
 
     const after = await request(app).get(`/api/v1/startups/${startupId}`);
-    expect(after.body.data.raisedSoFar).toBe(200);
+    expect(after.body.data.raisedSoFarCents).toBe(20000);
   });
 
   test("a duplicate delivery of the same succeeded event does not double-credit the startup (idempotency)", async () => {
-    const { startupId, investment } = await setupInvestment(200);
+    const { startupId, investment } = await setupInvestment(20000);
     const event = { type: "payment_intent.succeeded", data: { object: { id: investment.stripePaymentIntentId } } };
 
     await sendWebhook(event);
     await sendWebhook(event); // Stripe's own retry behavior can deliver a webhook more than once
 
     const after = await request(app).get(`/api/v1/startups/${startupId}`);
-    expect(after.body.data.raisedSoFar).toBe(200); // not 400
+    expect(after.body.data.raisedSoFarCents).toBe(20000); // not 40000
   });
 
   test("payment_intent.payment_failed marks the investment failed, not paid", async () => {
-    const { investment, investor } = await setupInvestment(200);
+    const { investment, investor } = await setupInvestment(20000);
     await sendWebhook({
       type: "payment_intent.payment_failed",
       data: { object: { id: investment.stripePaymentIntentId } },
@@ -94,7 +94,7 @@ describe("Stripe webhook", () => {
   });
 
   test("refunds are admin-only (D3): the investor cannot reclaim a paid investment; an admin can, once it is paid", async () => {
-    const { investment, investor, startupId, startupOwner } = await setupInvestment(200);
+    const { investment, investor, startupId, startupOwner } = await setupInvestment(20000);
     const admin = await createAdmin();
     const refund = (token) =>
       request(app).post(`/api/v1/investments/${investment._id}/refund`).set("Authorization", `Bearer ${token}`);
@@ -109,7 +109,7 @@ describe("Stripe webhook", () => {
       expect(res.status).toBe(403);
       expect(res.body.error.code).toBe("FORBIDDEN");
     }
-    expect((await Startup.findById(startupId)).raisedSoFar).toBe(200); // nothing reclaimed
+    expect((await Startup.findById(startupId)).raisedSoFarCents).toBe(20000); // nothing reclaimed
 
     const byAdmin = await refund(admin.accessToken);
     expect(byAdmin.status).toBe(200);
@@ -117,7 +117,7 @@ describe("Stripe webhook", () => {
   });
 
   test("GET /api/investments/startup lists investments received by the current user's startup, with investor details populated", async () => {
-    const { startupOwner, investor } = await setupInvestment(200);
+    const { startupOwner, investor } = await setupInvestment(20000);
 
     const res = await request(app)
       .get("/api/v1/investments/startup")

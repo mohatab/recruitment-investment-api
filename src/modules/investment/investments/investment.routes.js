@@ -13,7 +13,7 @@ router.use(authenticate);
  * /api/v1/investments:
  *   post:
  *     tags: [Investments]
- *     summary: Start an investment (creates a Stripe PaymentIntent; confirm client-side with the returned clientSecret)
+ *     summary: "Start an investment: reserves capacity on the startup and creates a Stripe PaymentIntent to confirm client-side with the returned clientSecret. Refused with 422 MINIMUM_INVESTMENT_NOT_MET below the startup's minimum, or FUNDING_TARGET_EXCEEDED when the remaining capacity is smaller than the amount."
  *     security: [{ BearerAuth: [] }]
  *     x-required-roles: [investor]
  *     x-requires-verified-email: true
@@ -21,7 +21,7 @@ router.use(authenticate);
  *       required: true
  *       content:
  *         application/json:
- *           schema: { type: object, required: [startupId, amount], properties: { startupId: { type: string }, amount: { type: number } } }
+ *           schema: { type: object, required: [startupId, amountCents], properties: { startupId: { type: string }, amountCents: { type: integer, minimum: 1, description: "Integer minor units (cents)" } } }
  *     responses:
  *       201: { $ref: '#/components/responses/InvestmentCreatedResponse' }
  *       400: { $ref: '#/components/responses/ValidationError' }

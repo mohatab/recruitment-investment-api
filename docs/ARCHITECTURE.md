@@ -164,7 +164,7 @@ than one Node process would need a shared store (Redis) for presence and
 Socket.IO's Redis adapter for cross-process room delivery — noted at the
 point it would matter, not built speculatively.
 
-## Payment / webhook flow
+## Investment / payment flow
 
 ```mermaid
 sequenceDiagram
@@ -174,36 +174,49 @@ sequenceDiagram
     participant Webhook as /api/v1/payments/webhook
     participant DB as MongoDB
 
-    Investor->>API: POST { startupId, amount }
+    Investor->>API: POST { startupId, amountCents }
+    API->>DB: reserve capacity (conditional: raised + reserved + amount <= target)
+    Note over DB: refused -> 422 FUNDING_TARGET_EXCEEDED, nothing created
     API->>DB: Investment.create(status="pending")
-    API->>Stripe: paymentIntents.create(amount)
+    API->>Stripe: paymentIntents.create(amountCents)
     Stripe-->>API: { id, client_secret }
     API-->>Investor: { investment, clientSecret }
     Investor->>Stripe: confirm payment (Stripe.js, client-side)
 
     Stripe->>Webhook: POST event (signed)
     Webhook->>Webhook: verify signature (webhook secret)
-    Webhook->>DB: findOneAndUpdate({paymentIntentId, status:"pending"}, {status:"paid"})
-    Note over DB: atomic — a duplicate/concurrent delivery finds no "pending" doc left and no-ops
-    Webhook->>DB: Startup.raisedSoFar += amount
-    Webhook->>DB: Notification for startup owner
+    Webhook->>DB: markPaid: pending -> paid (conditional on the old status)
+    Webhook->>DB: reservedCents -= amount, raisedSoFarCents += amount
+    Webhook->>DB: notification for the startup owner (never fails the webhook)
 ```
 
-Two deliberate choices here, both because a payment workflow gets this
-wrong easily elsewhere:
+Deliberate choices, because payment workflows get these wrong elsewhere:
 
-1. **The server never sees a raw card number.** It creates a PaymentIntent
-   and hands the client a `client_secret`; Stripe.js/Elements handles card
-   data entirely client-side.
-2. **Payment state changes only on a signature-verified webhook**, never on
-   a client's "it succeeded" callback — a client can lie or the callback
-   can simply never fire (closed tab, network drop); the webhook is the
-   only source of truth Stripe itself guarantees will eventually arrive.
-3. **The pending→paid transition is the atomic operation**
-   (`findOneAndUpdate` filtered on the _old_ status), not a
-   read-then-check-then-write — Stripe redelivers webhooks, and a
-   read-then-write version of this check has a real race under concurrent
-   delivery (see `investment.service.js` for the full comment).
+1. **The server never sees a raw card number.** It creates a PaymentIntent and
+   hands the client a `client_secret`; Stripe.js/Elements handles card data.
+2. **Payment state changes only on a signature-verified webhook**, never on a
+   client's "it succeeded" callback.
+3. **Every state and capacity change is a single conditional update** whose
+   filter is the rule being enforced (the old status, or the funding
+   invariant via `$expr`). Nothing is read-compare-written, so duplicate
+   webhook deliveries and concurrent investors are safe by construction
+   rather than by timing.
+4. **Pending investments reserve capacity**, so a round cannot be
+   oversubscribed by investors who all pass an availability check before any
+   of them pays.
+5. **`failed -> paid` is a legal transition** (Stripe allows retrying a
+   declined PaymentIntent) and re-checks the cap; a late success that no
+   longer fits is reported back uncredited instead of overshooting the target
+   (audit C3).
+
+Money is integer minor units end to end — see `common/utils/money.js` and the
+README's "Money and the investment lifecycle".
+
+**Task boundary.** This task (7) owns the domain rules above and the
+`markPaid` / `markFailed` / `refund` interface. Task 8 owns Stripe itself:
+processed-event log, outbound idempotency keys, amount/currency verification,
+`charge.refunded` and disputes. Until then the webhook is signature-verified
+but its bookkeeping is not complete.
 
 ## API contract
 

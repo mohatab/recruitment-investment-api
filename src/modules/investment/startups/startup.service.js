@@ -3,7 +3,7 @@ const Investor = require("../investors/investor.model");
 const { NotFoundError } = require("../../../common/errors/AppError");
 const { parsePagination, buildPagination } = require("../../../common/utils/pagination");
 
-const SORTABLE = ["createdAt", "name", "totalRaising", "minInvestment", "raisedSoFar"];
+const SORTABLE = ["createdAt", "name", "totalRaisingCents", "minInvestmentCents", "raisedSoFarCents"];
 
 // Reports whether this created the profile so the route can answer 201 vs 200.
 async function upsertMine(ownerId, data) {
@@ -50,7 +50,7 @@ async function matchesForInvestor(investorUserId, query = {}) {
 
   const { criteria } = investor;
   const filter = {
-    minInvestment: { $gte: criteria.minInvestment, $lte: criteria.maxInvestment },
+    minInvestmentCents: { $gte: criteria.minInvestmentCents, $lte: criteria.maxInvestmentCents },
   };
   if (criteria.industries.length) filter.industries = { $in: criteria.industries };
   if (criteria.stages.length) filter.stage = { $in: criteria.stages };

@@ -255,9 +255,9 @@ If two recruiters move the same application at once, the second gets
 **Investor invests in a startup**
 
 ```
-PUT  /api/v1/investors/me  { criteria: { minInvestment, maxInvestment, industries, stages } }
+PUT  /api/v1/investors/me  { criteria: { minInvestmentCents, maxInvestmentCents, industries, stages } }
 GET  /api/v1/startups/matches                       # startups matching saved criteria
-POST /api/v1/investments  { startupId, amount }     # -> { investment, clientSecret }
+POST /api/v1/investments  { startupId, amountCents }   # -> { investment, clientSecret }
 ```
 
 The client confirms payment with Stripe.js using `clientSecret`. The
@@ -424,6 +424,124 @@ codebase and how each was fixed. Current posture:
   through Express 4's own `body-parser` dependency (no non-breaking fix
   available upstream). Express 5 migration was evaluated and deliberately
   deferred — see [Express 4 vs 5](#express-4-vs-5) below for why.
+
+## Money and the investment lifecycle
+
+**Money is always an integer number of minor units** (cents; USD is the only
+supported currency). Every monetary field carries a `Cents` suffix —
+`amountCents`, `totalRaisingCents`, `minInvestmentCents`,
+`raisedSoFarCents`, `reservedCents` — and is an integer in the API, in
+MongoDB and in the call to Stripe, which already expects minor units. Floats
+never touch money: `10.005` is rejected rather than rounded, and no code
+multiplies or divides an amount to store it. Display formatting (dividing by 100) is the client's job; `common/utils/money.js` has the one helper used for
+human-readable text in notifications.
+
+**The funding target is a hard cap.** A startup tracks `raisedSoFarCents`
+(confirmed payments) and `reservedCents` (investments awaiting payment), and
+the invariant is:
+
+```
+raisedSoFarCents + reservedCents <= totalRaisingCents
+```
+
+Creating an investment _reserves_ capacity, so two investors racing for the
+last slice of a round cannot both be accepted. The reservation is a single
+conditional update whose filter is the invariant itself
+(`$expr` comparing the document's own fields), so MongoDB enforces it rather
+than this process; read-compare-write cannot do that. A request that would
+exceed the target is refused with `422 FUNDING_TARGET_EXCEEDED`, and
+`GET /api/v1/startups/:id` exposes `remainingCents`.
+
+**Lifecycle**
+
+```
+                 payment confirmed
+   pending ──────────────────────────► paid ──────────► refunded (admin only, terminal)
+      │                                 ▲
+      │ payment failed                  │ retry succeeds (capacity re-checked)
+      ▼                                 │
+    failed ─────────────────────────────┘
+```
+
+| Transition           | Effect on the startup                                             |
+| -------------------- | ----------------------------------------------------------------- |
+| create → `pending`   | `reservedCents += amount` (refused if it would exceed the target) |
+| `pending` → `paid`   | `reservedCents -= amount`, `raisedSoFarCents += amount`           |
+| `pending` → `failed` | `reservedCents -= amount`                                         |
+| `failed` → `paid`    | `raisedSoFarCents += amount`, only if the round still has room    |
+| `paid` → `refunded`  | `raisedSoFarCents -= amount`                                      |
+
+Status is never accepted from a client; it changes only through these
+transitions. Refunds are admin-only (decision D3): an investor cannot reclaim
+money already credited to a startup. A refunded investment is terminal — it
+cannot be refunded twice or moved back into a payable state.
+
+**Task 7 / Task 8 boundary.** Task 7 owns the domain: money representation,
+the funding invariant, the state machine, and the `markPaid` / `markFailed` /
+`refund` service interface. **Task 8 owns Stripe**: webhook idempotency
+bookkeeping (a processed-event log), the outbound idempotency key on
+PaymentIntent creation, verifying event amount and currency against the
+record, `charge.refunded` and dispute events, and retry behaviour. Payment
+processing is **not** production-complete until Task 8 lands.
+
+## Money and the investment lifecycle
+
+**Money is always an integer number of minor units** (cents; USD is the only
+supported currency). Every monetary field carries a `Cents` suffix —
+`amountCents`, `totalRaisingCents`, `minInvestmentCents`,
+`raisedSoFarCents`, `reservedCents` — and is an integer in the API, in
+MongoDB and in the call to Stripe, which already expects minor units. Floats
+never touch money: `10.005` is rejected rather than rounded, and no code
+multiplies or divides an amount to store it. Display formatting (dividing by 100) is the client's job; `common/utils/money.js` has the one helper used for
+human-readable text in notifications.
+
+**The funding target is a hard cap.** A startup tracks `raisedSoFarCents`
+(confirmed payments) and `reservedCents` (investments awaiting payment), and
+the invariant is:
+
+```
+raisedSoFarCents + reservedCents <= totalRaisingCents
+```
+
+Creating an investment _reserves_ capacity, so two investors racing for the
+last slice of a round cannot both be accepted. The reservation is a single
+conditional update whose filter is the invariant itself
+(`$expr` comparing the document's own fields), so MongoDB enforces it rather
+than this process; read-compare-write cannot do that. A request that would
+exceed the target is refused with `422 FUNDING_TARGET_EXCEEDED`, and
+`GET /api/v1/startups/:id` exposes `remainingCents`.
+
+**Lifecycle**
+
+```
+                 payment confirmed
+   pending ──────────────────────────► paid ──────────► refunded (admin only, terminal)
+      │                                 ▲
+      │ payment failed                  │ retry succeeds (capacity re-checked)
+      ▼                                 │
+    failed ─────────────────────────────┘
+```
+
+| Transition           | Effect on the startup                                             |
+| -------------------- | ----------------------------------------------------------------- |
+| create → `pending`   | `reservedCents += amount` (refused if it would exceed the target) |
+| `pending` → `paid`   | `reservedCents -= amount`, `raisedSoFarCents += amount`           |
+| `pending` → `failed` | `reservedCents -= amount`                                         |
+| `failed` → `paid`    | `raisedSoFarCents += amount`, only if the round still has room    |
+| `paid` → `refunded`  | `raisedSoFarCents -= amount`                                      |
+
+Status is never accepted from a client; it changes only through these
+transitions. Refunds are admin-only (decision D3): an investor cannot reclaim
+money already credited to a startup. A refunded investment is terminal — it
+cannot be refunded twice or moved back into a payable state.
+
+**Task 7 / Task 8 boundary.** Task 7 owns the domain: money representation,
+the funding invariant, the state machine, and the `markPaid` / `markFailed` /
+`refund` service interface. **Task 8 owns Stripe**: webhook idempotency
+bookkeeping (a processed-event log), the outbound idempotency key on
+PaymentIntent creation, verifying event amount and currency against the
+record, `charge.refunded` and dispute events, and retry behaviour. Payment
+processing is **not** production-complete until Task 8 lands.
 
 ## Database design
 

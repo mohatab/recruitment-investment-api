@@ -3,8 +3,8 @@ const { app, request, registerUser } = require("../helpers");
 const validStartup = {
   name: "Acme AI",
   description: "We do AI things",
-  totalRaising: 100000,
-  minInvestment: 1000,
+  totalRaisingCents: 10000000,
+  minInvestmentCents: 100000,
   industries: ["software"],
   stage: "seed",
 };
@@ -64,7 +64,9 @@ describe("investor profiles and matching", () => {
     const criteriaRes = await request(app)
       .put("/api/v1/investors/me")
       .set("Authorization", `Bearer ${investor.accessToken}`)
-      .send({ criteria: { minInvestment: 500, maxInvestment: 5000, industries: ["software"], stages: ["seed"] } });
+      .send({
+        criteria: { minInvestmentCents: 50000, maxInvestmentCents: 500000, industries: ["software"], stages: ["seed"] },
+      });
     expect(criteriaRes.status).toBe(201);
 
     const matches = await request(app)
@@ -86,7 +88,7 @@ describe("investor profiles and matching", () => {
     await request(app)
       .put("/api/v1/investors/me")
       .set("Authorization", `Bearer ${investor.accessToken}`)
-      .send({ aboutMe: "I invest in software", criteria: { minInvestment: 100 } });
+      .send({ aboutMe: "I invest in software", criteria: { minInvestmentCents: 10000 } });
 
     const mine = await request(app).get("/api/v1/investors/me").set("Authorization", `Bearer ${investor.accessToken}`);
     expect(mine.status).toBe(200);

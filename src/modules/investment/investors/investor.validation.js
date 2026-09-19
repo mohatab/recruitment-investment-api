@@ -12,8 +12,8 @@ const upsert = Joi.object({
   numberOfInvestments: Joi.number().min(0).default(0),
   companies: Joi.array().items(Joi.string()).default([]),
   criteria: Joi.object({
-    minInvestment: Joi.number().min(0),
-    maxInvestment: Joi.number().min(0),
+    minInvestmentCents: Joi.number().integer().min(0),
+    maxInvestmentCents: Joi.number().integer().min(0),
     industries: Joi.array().items(Joi.string()),
     stages: Joi.array().items(Joi.string().valid(...STAGES)),
     locations: Joi.array().items(Joi.string()),

@@ -34,7 +34,7 @@ const JOB = {
   salaryType: "monthly",
   expirationDate: new Date(Date.now() + 30 * 864e5).toISOString(),
 };
-const STARTUP = { name: "Acme", description: "desc", totalRaising: 100000, minInvestment: 100 };
+const STARTUP = { name: "Acme", description: "desc", totalRaisingCents: 10000000, minInvestmentCents: 10000 };
 
 async function postJob(recruiter) {
   const res = await as(recruiter).post("/api/v1/jobs", JOB);
@@ -182,7 +182,7 @@ describe("jobs and applications", () => {
 });
 
 describe("startups, investors and investments", () => {
-  test("PUT /startups/me cannot set owner or raisedSoFar, and never touches another startup's profile", async () => {
+  test("PUT /startups/me cannot set owner or raisedSoFarCents, and never touches another startup's profile", async () => {
     const [founder, rival] = await Promise.all([registerUser({ role: "startup" }), registerUser({ role: "startup" })]);
     await as(rival)
       .put("/api/v1/startups/me", { ...STARTUP, name: "Rival" })
@@ -191,13 +191,13 @@ describe("startups, investors and investments", () => {
     const res = await as(founder).put("/api/v1/startups/me", {
       ...STARTUP,
       owner: rival.user._id,
-      raisedSoFar: 999999,
+      raisedSoFarCents: 999999,
     });
     expect(res.status).toBe(201); // first PUT creates the profile
-    expect(res.body.data).toMatchObject({ owner: founder.user._id, raisedSoFar: 0, name: "Acme" });
+    expect(res.body.data).toMatchObject({ owner: founder.user._id, raisedSoFarCents: 0, name: "Acme" });
 
     const rivalProfile = await Startup.findOne({ owner: rival.user._id });
-    expect(rivalProfile).toMatchObject({ name: "Rival", raisedSoFar: 0 });
+    expect(rivalProfile).toMatchObject({ name: "Rival", raisedSoFarCents: 0 });
     expect(await Startup.countDocuments()).toBe(2);
   });
 
@@ -218,7 +218,12 @@ describe("startups, investors and investments", () => {
     const profile = (
       await as(investor).put("/api/v1/investors/me", {
         aboutMe: "Seed investor",
-        criteria: { minInvestment: 5000, maxInvestment: 250000, industries: ["fintech"], stages: ["seed"] },
+        criteria: {
+          minInvestmentCents: 500000,
+          maxInvestmentCents: 25000000,
+          industries: ["fintech"],
+          stages: ["seed"],
+        },
       })
     ).body.data;
 
@@ -228,7 +233,7 @@ describe("startups, investors and investments", () => {
       expect(res.body.data.aboutMe).toBe("Seed investor");
       expect(res.body.data.criteria).toBeUndefined();
     }
-    expect((await as(investor).get("/api/v1/investors/me")).body.data.criteria.maxInvestment).toBe(250000);
+    expect((await as(investor).get("/api/v1/investors/me")).body.data.criteria.maxInvestmentCents).toBe(25000000);
   });
 
   test("investment lists are scoped to the caller: investors see their own, startups see only theirs", async () => {
@@ -240,13 +245,13 @@ describe("startups, investors and investments", () => {
     ]);
     const startupA = (await as(founderA).put("/api/v1/startups/me", STARTUP)).body.data;
     const startupB = (await as(founderB).put("/api/v1/startups/me", STARTUP)).body.data;
-    await as(investorA).post("/api/v1/investments", { startupId: startupA._id, amount: 500 }).expect(201);
-    await as(investorB).post("/api/v1/investments", { startupId: startupB._id, amount: 700 }).expect(201);
+    await as(investorA).post("/api/v1/investments", { startupId: startupA._id, amountCents: 50000 }).expect(201);
+    await as(investorB).post("/api/v1/investments", { startupId: startupB._id, amountCents: 70000 }).expect(201);
 
     const mineA = (await as(investorA).get("/api/v1/investments/mine")).body.data;
-    expect(mineA.map((i) => i.amount)).toEqual([500]);
+    expect(mineA.map((i) => i.amountCents)).toEqual([50000]);
     const receivedB = (await as(founderB).get("/api/v1/investments/startup")).body.data;
-    expect(receivedB.map((i) => i.amount)).toEqual([700]);
+    expect(receivedB.map((i) => i.amountCents)).toEqual([70000]);
   });
 
   test("an investment's investor comes from the session, not the body", async () => {
@@ -258,7 +263,7 @@ describe("startups, investors and investments", () => {
     const startup = (await as(founder).put("/api/v1/startups/me", STARTUP)).body.data;
     const res = await as(investor).post("/api/v1/investments", {
       startupId: startup._id,
-      amount: 500,
+      amountCents: 50000,
       investor: victim.user._id,
       status: "paid",
     });
@@ -273,8 +278,9 @@ describe("startups, investors and investments", () => {
     ]);
     const admin = await createAdmin();
     const startup = (await as(founder).put("/api/v1/startups/me", STARTUP)).body.data;
-    const { investment } = (await as(investor).post("/api/v1/investments", { startupId: startup._id, amount: 500 }))
-      .body.data;
+    const { investment } = (
+      await as(investor).post("/api/v1/investments", { startupId: startup._id, amountCents: 50000 })
+    ).body.data;
 
     expectForbidden(await as(investor).post(`/api/v1/investments/${investment._id}/refund`));
     expectForbidden(await as(founder).post(`/api/v1/investments/${investment._id}/refund`));

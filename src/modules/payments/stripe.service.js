@@ -7,9 +7,12 @@ const stripe = new Stripe(env.stripe.secretKey || "sk_test_placeholder");
 // client its `client_secret` to confirm with Stripe.js/Elements — the
 // server never sees or transmits a raw card number, unlike the previous
 // implementation's `paymentMethods.create({card:{number:...}})` call.
-async function createPaymentIntent({ amount, currency = "usd", metadata }) {
+//
+// Stripe's `amount` is already an integer in the currency's minor unit, which
+// is exactly how amounts are stored, so nothing is scaled or rounded here.
+async function createPaymentIntent({ amountCents, currency = "usd", metadata }) {
   return stripe.paymentIntents.create({
-    amount: Math.round(amount * 100),
+    amount: amountCents,
     currency,
     metadata,
     automatic_payment_methods: { enabled: true },

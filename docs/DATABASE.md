@@ -83,6 +83,27 @@ none were added speculatively.
 - `Message.{roomId, createdAt}` — every message query filters by `roomId` and sorts by `createdAt`; this single compound index serves both (a separate single-field index on `roomId` alone would be redundant, since this compound index's `roomId`-only prefix already serves a `roomId`-alone query — an earlier version of this schema had exactly that redundant index, removed once the query patterns were checked against it)
 - `RefreshToken`/`AuthToken.{expiresAt}` — TTL indexes for automatic expiry; `AuthToken.{user, purpose, createdAt}` serves the supersede and cooldown lookups
 
+## Investment constraints
+
+- **Money is integer minor units** in every field (`*Cents`), validated with
+  `Number.isSafeInteger` at the schema level as well as by Joi, so a direct
+  model write cannot introduce a fractional amount either.
+- **Funding invariant**: `raisedSoFarCents + reservedCents <= totalRaisingCents`,
+  enforced by conditional updates using `$expr` on the startup document — never
+  by reading, comparing and writing in the service.
+- `Investment.stripePaymentIntentId` is **unique and sparse**: one investment
+  per PaymentIntent, while investments that have not reached Stripe yet coexist
+  without a value.
+- `Startup.owner` is unique (one profile per account); `remainingCents` is a
+  virtual, not a stored field, so it can never drift from the counters.
+- Indexes: `Investment.{investor, createdAt}` and `Investment.{startup, createdAt}`
+  for the two list endpoints; `Startup.{industries, stage}` for browsing and
+  matching. The previous single-field `investor`/`startup` indexes were replaced
+  by those compounds.
+- Existing float amounts are converted by
+  `scripts/migrate-money-to-minor-units.js` (idempotent, supports `--dry-run`,
+  and reports any value that was not a whole number of cents).
+
 ## Recruitment constraints
 
 - `Application.{job, applicant}` is **unique**: one application per candidate
@@ -103,6 +124,27 @@ none were added speculatively.
   by job), `Application.{job, createdAt}` and `Application.{applicant, createdAt}`
   for the two list endpoints. The previous single-field `job`/`applicant`
   indexes were dropped as redundant prefixes.
+
+## Investment constraints
+
+- **Money is integer minor units** in every field (`*Cents`), validated with
+  `Number.isSafeInteger` at the schema level as well as by Joi, so a direct
+  model write cannot introduce a fractional amount either.
+- **Funding invariant**: `raisedSoFarCents + reservedCents <= totalRaisingCents`,
+  enforced by conditional updates using `$expr` on the startup document —
+  never by reading, comparing and writing in the service.
+- `Investment.stripePaymentIntentId` is **unique and sparse**: one investment
+  per PaymentIntent, while investments that have not reached Stripe yet
+  coexist without a value.
+- `Startup.owner` is unique (one profile per account); `remainingCents` is a
+  virtual, not a stored field, so it can never drift from the counters.
+- Indexes: `Investment.{investor, createdAt}` and `Investment.{startup, createdAt}`
+  for the two list endpoints; `Startup.{industries, stage}` for browsing and
+  matching. The previous single-field `investor`/`startup` indexes were
+  replaced by those compounds.
+- Existing float amounts are converted by
+  `scripts/migrate-money-to-minor-units.js` (idempotent, `--dry-run`
+  supported, reports any value that was not a whole number of cents).
 
 ## Known, accepted trade-offs
 

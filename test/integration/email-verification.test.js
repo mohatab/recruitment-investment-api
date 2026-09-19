@@ -101,7 +101,7 @@ describe("email verification", () => {
     const res = await request(app)
       .post("/api/v1/investments")
       .set("Authorization", `Bearer ${accessToken}`)
-      .send({ startupId: "507f1f77bcf86cd799439011", amount: 100 });
+      .send({ startupId: "507f1f77bcf86cd799439011", amountCents: 10000 });
     expect(res.body.error.code).toBe("EMAIL_NOT_VERIFIED");
   });
 });

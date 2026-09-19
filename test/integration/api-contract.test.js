@@ -80,7 +80,7 @@ describe("success envelope", () => {
 
   test("PUT on a singleton profile creates (201) then updates (200)", async () => {
     const founder = await registerUser({ role: "startup" });
-    const body = { name: "Acme", description: "d", totalRaising: 1000, minInvestment: 10 };
+    const body = { name: "Acme", description: "d", totalRaisingCents: 100000, minInvestmentCents: 1000 };
     expect((await request(app).put("/api/v1/startups/me").set(auth(founder.accessToken)).send(body)).status).toBe(201);
     expect((await request(app).put("/api/v1/startups/me").set(auth(founder.accessToken)).send(body)).status).toBe(200);
   });
@@ -255,7 +255,7 @@ describe("pagination", () => {
     await request(app)
       .put("/api/v1/startups/me")
       .set(auth(founder.accessToken))
-      .send({ name: "Acme", description: "d", totalRaising: 1000, minInvestment: 10 });
+      .send({ name: "Acme", description: "d", totalRaisingCents: 100000, minInvestmentCents: 1000 });
     await request(app).put("/api/v1/investors/me").set(auth(investor.accessToken)).send({ aboutMe: "investor" });
 
     const lists = [
