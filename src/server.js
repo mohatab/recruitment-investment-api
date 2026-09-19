@@ -5,12 +5,12 @@ const { Server } = require("socket.io");
 const env = require("./config/env");
 const app = require("./app");
 const connectDB = require("./config/database");
-const { initSocket } = require("./realtime/socket");
+const { initSocket, serverOptions } = require("./realtime/socket");
 const { setIO } = require("./realtime/ioRegistry");
 const logger = require("./common/utils/logger");
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: env.corsOrigin } });
+const io = new Server(server, { ...serverOptions, cors: { origin: env.corsOrigin } });
 initSocket(io);
 setIO(io);
 

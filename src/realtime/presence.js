@@ -11,19 +11,29 @@ const onlineUsers = new Map(); // userId -> Set<socketId>
 // socket gone), so a second tab doesn't announce "online" twice or "offline"
 // while another tab is still connected.
 function markOnline(userId, socketId) {
-  if (!onlineUsers.has(userId)) onlineUsers.set(userId, new Set());
-  const sockets = onlineUsers.get(userId);
+  const key = String(userId);
+  if (!onlineUsers.has(key)) onlineUsers.set(key, new Set());
+  const sockets = onlineUsers.get(key);
   sockets.add(socketId);
   return sockets.size === 1;
 }
 
 function markOffline(userId, socketId) {
-  const sockets = onlineUsers.get(userId);
+  const key = String(userId);
+  const sockets = onlineUsers.get(key);
   if (!sockets) return false;
-  sockets.delete(socketId);
+  // Only a socket we actually counted may decrement: a duplicate disconnect
+  // for the same socket id must not drop a user who still has other tabs open.
+  if (!sockets.delete(socketId)) return false;
   if (sockets.size > 0) return false;
-  onlineUsers.delete(userId);
+  onlineUsers.delete(key);
   return true;
 }
 
-module.exports = { onlineUsers, markOnline, markOffline };
+// The one place anything outside this module asks "is this user online" —
+// callers never reach into the Map, so how presence is stored stays an
+// implementation detail of this file.
+const isOnline = (userId) => onlineUsers.has(String(userId));
+const connectionCount = (userId) => onlineUsers.get(String(userId))?.size ?? 0;
+
+module.exports = { onlineUsers, markOnline, markOffline, isOnline, connectionCount };

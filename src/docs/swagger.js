@@ -234,7 +234,11 @@ const entities = {
       receiver: id(),
       roomId: { type: "string", description: "Derived from both user ids; never accepted from a client" },
       body: { type: "string" },
-      delivered: { type: "boolean" },
+      delivered: {
+        type: "boolean",
+        description:
+          "Whether the recipient had an open socket when the message was persisted. Server-set, not a read receipt, and never revised afterwards",
+      },
       ...timestamps,
     },
   },
@@ -245,7 +249,7 @@ const entities = {
       name: { type: "string" },
       lastMessage: { type: "string" },
       timestamp: { type: "string", format: "date-time" },
-      isOnline: { type: "boolean" },
+      isOnline: { type: "boolean", description: "Visible only to conversation partners, never to strangers" },
     },
   },
   Experience: {

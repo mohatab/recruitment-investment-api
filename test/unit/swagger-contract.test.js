@@ -102,9 +102,31 @@ describe("Swagger contract", () => {
     expect(paginated.length).toBeGreaterThan(5);
     const missing = paginated.filter((r) => {
       const params = JSON.stringify(operation(r).parameters || []);
-      return !["Page", "Limit", "Sort"].every((p) => params.includes(`parameters/${p}`));
+      return !["Page", "Limit"].every((p) => params.includes(`parameters/${p}`));
     });
     expect(missing.map(label)).toEqual([]);
+  });
+
+  // A parameter that is documented but ignored — or accepted but undocumented
+  // — is a lie in the contract. `sort` on the conversation list was the first
+  // kind (validated, advertised, never applied) and `read` on the notification
+  // list was both (advertised, accepted, never applied).
+  test("the documented query parameters are exactly the ones a route accepts", () => {
+    const documentedNames = (route) =>
+      (operation(route).parameters || [])
+        .map((p) => (p.$ref ? swaggerSpec.components.parameters[p.$ref.split("/").pop()] : p))
+        .filter((p) => p.in === "query")
+        .map((p) => p.name);
+
+    const validated = routes.filter((r) => r.queryKeys);
+    expect(validated.length).toBeGreaterThan(5);
+    const wrong = validated.filter((r) => {
+      const documented = documentedNames(r).sort();
+      return JSON.stringify(documented) !== JSON.stringify([...r.queryKeys].sort());
+    });
+    expect(
+      wrong.map((r) => `${label(r)} (accepts ${r.queryKeys.sort()}; documents ${documentedNames(r).sort()})`)
+    ).toEqual([]);
   });
 
   test("no component is declared but unused", () => {

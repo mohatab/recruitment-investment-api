@@ -21,6 +21,9 @@ router.use(authenticate);
  *       - $ref: '#/components/parameters/Page'
  *       - $ref: '#/components/parameters/Limit'
  *       - $ref: '#/components/parameters/Sort'
+ *       - in: query
+ *         name: status
+ *         schema: { type: string }
  *     x-required-roles: [candidate]
  *     responses:
  *       200: { $ref: '#/components/responses/ApplicationListResponse' }

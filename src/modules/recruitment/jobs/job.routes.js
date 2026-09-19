@@ -34,12 +34,6 @@ const router = express.Router();
  *       - in: query
  *         name: status
  *         schema: { type: string, enum: [open, closed] }
- *       - in: query
- *         name: page
- *         schema: { type: integer }
- *       - in: query
- *         name: limit
- *         schema: { type: integer }
  *     responses:
  *       200: { $ref: '#/components/responses/JobListResponse' }
  */
@@ -60,6 +54,18 @@ router.get("/", validate(schemas.list, "query"), controller.list);
  *       - in: query
  *         name: status
  *         schema: { type: string, enum: [open, closed] }
+ *       - in: query
+ *         name: search
+ *         schema: { type: string }
+ *       - in: query
+ *         name: role
+ *         schema: { type: string }
+ *       - in: query
+ *         name: location
+ *         schema: { type: string }
+ *       - in: query
+ *         name: minSalary
+ *         schema: { type: number }
  *     responses:
  *       200: { $ref: '#/components/responses/JobListResponse' }
  *       401: { $ref: '#/components/responses/Unauthorized' }

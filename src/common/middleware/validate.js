@@ -4,7 +4,11 @@ const { ValidationError } = require("../errors/AppError");
 // validated/coerced value. One factory shared by every route instead of
 // re-implementing "if (!field) return 400" per handler.
 module.exports = function validate(schema, property = "body") {
-  return (req, res, next) => {
+  // Named, and carrying its schema, so route introspection (test/routes.js)
+  // can compare what an endpoint actually accepts against what OpenAPI says
+  // it accepts — that is how a parameter that is documented but ignored, or
+  // accepted but undocumented, gets caught.
+  const validateRequest = (req, res, next) => {
     const { error, value } = schema.validate(req[property], {
       abortEarly: false,
       stripUnknown: true,
@@ -17,4 +21,7 @@ module.exports = function validate(schema, property = "body") {
     req[property] = value;
     next();
   };
+  validateRequest.schema = schema;
+  validateRequest.property = property;
+  return validateRequest;
 };

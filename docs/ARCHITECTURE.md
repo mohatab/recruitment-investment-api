@@ -176,7 +176,53 @@ direct fix for the original codebase's vulnerability (`AUDIT.md` #6/#7):
 
 Presence events go only to the user's conversation partners
 (`message.service.conversationPartners`), and only on real transitions (first
-socket online, last socket offline).
+socket online, last socket offline). Connections are reference-counted per
+user, so three tabs announce "online" once, closing two of them announces
+nothing, and only the last one going announces "offline"; a duplicate
+disconnect for a socket that was already counted out cannot drop a user who
+is still connected elsewhere.
+
+### Event contract
+
+Socket.IO is not expressible in OpenAPI, so the full contract lives here. There
+is no production event outside this table.
+
+**Client → server.** One event, authenticated by the handshake, validated by
+the same Joi schema as its REST twin, rate-limited per socket (30 events per
+10s; beyond that the ack is `TOO_MANY_REQUESTS`), and capped by the
+transport at 64KB per frame.
+
+| Event          | Payload                                                                               | Rules                                                                                                          | Acks with                                                                                                                                                                             | Emits                                             |
+| -------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `chat:message` | `{ receiverId: ObjectId, body: string (1–5000, trimmed) }`; unknown keys are stripped | Identical to `POST /api/v1/messages`: sender is the session user, recipient must be a different active account | `{ ok: true, data: Message }`, or `{ ok: false, error: { code, message } }` with `VALIDATION_ERROR`, `SELF_MESSAGE_NOT_ALLOWED`, `NOT_FOUND`, `TOO_MANY_REQUESTS` or `INTERNAL_ERROR` | `message` to `user_<receiverId>`, after the write |
+
+**Server → client.**
+
+| Event          | Payload                                                       | Who receives it                                                      |
+| -------------- | ------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `message`      | the persisted `Message`                                       | `user_<receiverId>` — the recipient's own sockets only               |
+| `notification` | the `Notification` as that recipient sees it (never `readBy`) | `user_<id>` for a personal one, `role_<role>` for an admin broadcast |
+| `presence`     | `{ userId, online }`                                          | the user's conversation partners, on real transitions only           |
+
+**Rooms** are joined by the server at connect time from the verified session —
+`user_<id>` and `role_<role>` — and by nothing else. No event accepts a room
+name, a conversation id or a user id to join.
+
+**Errors** use the REST error codes and never carry a stack, a driver message
+or any internal detail; unexpected failures are logged server-side and acked
+as `INTERNAL_ERROR`.
+
+**Ordering**: every domain event is emitted _after_ the database write it
+announces, so a client that sees `message` or `notification` can rely on the
+record existing. Delivery itself is best-effort — a transport failure is
+logged and never fails an operation that was already persisted, because the
+record is always reachable over REST.
+
+**Duplicate sends** are not deduplicated: retrying `chat:message` stores two
+messages. Nothing in this domain derives state from a counter (no unread
+totals, no per-conversation aggregates), so a duplicate costs a duplicate line
+in a transcript and cannot corrupt state. An idempotency key would be the
+addition if the product ever grows unread counts.
 
 Presence (`realtime/presence.js`) is an in-memory `Map`, not a persisted
 collection — it's ephemeral by nature and doesn't need to survive a

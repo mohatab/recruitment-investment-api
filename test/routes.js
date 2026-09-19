@@ -25,6 +25,15 @@ const NESTED = new Map([
   [require("../src/modules/recruitment/applications/application.routes"), "/:jobId/applications"],
 ]);
 
+// Joi describe(): a key declared with .forbidden() is present but may never be
+// sent, so it is not an accepted parameter.
+function acceptedKeys(schema) {
+  const described = schema.describe();
+  return Object.entries(described.keys || {})
+    .filter(([, value]) => value.flags?.presence !== "forbidden")
+    .map(([key]) => key);
+}
+
 function walk(router, prefix, inherited, out) {
   const middleware = [...inherited];
   for (const layer of router.stack) {
@@ -33,6 +42,7 @@ function walk(router, prefix, inherited, out) {
       const path = `${prefix}${layer.route.path === "/" ? "" : layer.route.path}` || "/";
       for (const method of Object.keys(layer.route.methods)) {
         const gate = chain.find((fn) => fn.name === "authorizeRoles");
+        const queryValidator = chain.find((fn) => fn.name === "validateRequest" && fn.property === "query");
         out.push({
           method: method.toUpperCase(),
           path,
@@ -40,6 +50,9 @@ function walk(router, prefix, inherited, out) {
           authenticated: chain.some((fn) => fn.name === "authenticate"),
           roles: gate ? [...gate.roles].sort() : null,
           requiresVerifiedEmail: chain.some((fn) => fn.name === "requireVerifiedEmail"),
+          // The query keys this route really accepts (a forbidden key is not
+          // accepted), or null when it validates no query at all.
+          queryKeys: queryValidator ? acceptedKeys(queryValidator.schema) : null,
         });
       }
     } else if (layer.handle.stack) {

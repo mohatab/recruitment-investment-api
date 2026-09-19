@@ -13,14 +13,20 @@ router.use(authenticate);
  * /api/v1/notifications:
  *   get:
  *     tags: [Notifications]
- *     summary: List the current user's notifications (personal + their role's broadcasts)
+ *     summary: "List the current user's notifications: those addressed to them personally plus the broadcasts for their role. Never anyone else's."
  *     security: [{ BearerAuth: [] }]
  *     parameters:
  *       - $ref: '#/components/parameters/Page'
  *       - $ref: '#/components/parameters/Limit'
  *       - $ref: '#/components/parameters/Sort'
+ *       - in: query
+ *         name: read
+ *         required: false
+ *         schema: { type: boolean }
+ *         description: "Filter by this user's own read state. For a role broadcast that means their own receipt, not anyone else's."
  *     responses:
  *       200: { $ref: '#/components/responses/NotificationListResponse' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.get("/", validate(schemas.list, "query"), controller.listMine);
@@ -30,7 +36,7 @@ router.get("/", validate(schemas.list, "query"), controller.listMine);
  * /api/v1/notifications/{id}/read:
  *   patch:
  *     tags: [Notifications]
- *     summary: Mark a notification as read (owner only)
+ *     summary: "Mark a notification as read. Personal notifications: the recipient only. Role broadcasts: any member of the target role, recorded per user, so one reader never marks it read for the others. Idempotent."
  *     security: [{ BearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -39,6 +45,7 @@ router.get("/", validate(schemas.list, "query"), controller.listMine);
  *         schema: { type: string }
  *     responses:
  *       200: { $ref: '#/components/responses/NotificationResponse' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       403: { $ref: '#/components/responses/Forbidden' }
  *       404: { $ref: '#/components/responses/NotFound' }
@@ -50,7 +57,7 @@ router.patch("/:id/read", controller.markRead);
  * /api/v1/notifications/broadcast:
  *   post:
  *     tags: [Notifications]
- *     summary: Manually send a notification to a user or role (admin only)
+ *     summary: "Send a notification to one user or to a whole role (admin only). Exactly one of userId or targetRole; a direct recipient must be an existing, active account."
  *     security: [{ BearerAuth: [] }]
  *     x-required-roles: [admin]
  *     requestBody:

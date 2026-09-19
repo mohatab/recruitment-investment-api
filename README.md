@@ -44,7 +44,10 @@ result of fixing that; `AUDIT.md` describes what was actually wrong and why.
   PaymentIntent creation and refunds, a processed-event log, and automatic
   refunds for payments that arrive after a round is full — payment
   state is never trusted from the client
-- Real-time notifications and authenticated direct messaging over Socket.IO
+- Real-time notifications and authenticated direct messaging over Socket.IO:
+  rooms are derived from the verified session (never from a payload), every
+  event is validated, rate-limited and crash-proofed, and presence is
+  reference-counted per connection and visible only to conversation partners
 - Private file storage: uploads are content-verified (magic bytes, not just
   the declared type), stored under server-generated keys outside any served
   directory, and readable only through authorized download endpoints
@@ -718,9 +721,27 @@ release, or this project replaces it with a sanitizer that mutates
 
 ## Future improvements
 
-- Horizontal scaling for Socket.IO would need a shared adapter (Redis) for
-  the in-memory presence map — noted at the point it's implemented
-  (`src/realtime/presence.js`)
+Deliberately not built — each one is a product decision or a scale threshold
+this project has not reached, not an oversight:
+
+- **Horizontal realtime scaling.** Presence is an in-memory map and rooms use
+  the default adapter, so both are per process: a second instance would need
+  Redis (presence store + Socket.IO adapter) before it could be added.
+  Connection-count limiting belongs there too — an in-process counter is
+  bypassed by reconnecting to another instance, so it is the proxy's job.
+- **A durable notification/message outbox.** Delivery is best-effort after a
+  committed write, which is safe (the record is always readable over REST) but
+  means a client offline during the emit only learns about it on its next
+  fetch. A queue would be the next increment if delivery had to be guaranteed.
+- **Message read receipts and unread counts.** Messages carry `delivered`
+  (was the recipient connected when it was written) and nothing else; there is
+  no product requirement for per-message read state, and inventing one would
+  change the client contract. It is also why duplicate sends need no
+  idempotency key — no counter can drift.
+- **Message editing, deletion, search and attachments**, and broadcast read
+  receipts in their own collection rather than a `readBy` array (the array is
+  fine for role-sized audiences, not for many thousands of readers).
+- **Push notifications** (web push / APNs) for users with no socket open.
 - Admin-side moderation tooling for the contact form / broadcasts
 - E2E browser tests are not included; API-level integration tests are
 

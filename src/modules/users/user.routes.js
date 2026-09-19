@@ -145,12 +145,6 @@ router.get("/:id/cv", controller.downloadUserCv);
  *       - in: query
  *         name: role
  *         schema: { type: string, enum: [candidate, recruiter, investor, startup, admin] }
- *       - in: query
- *         name: page
- *         schema: { type: integer }
- *       - in: query
- *         name: limit
- *         schema: { type: integer }
  *     responses:
  *       200: { $ref: '#/components/responses/UserListResponse' }
  *       401: { $ref: '#/components/responses/Unauthorized' }

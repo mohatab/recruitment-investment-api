@@ -1,6 +1,6 @@
 const Notification = require("./notification.model");
 const User = require("../users/user.model");
-const { getIO } = require("../../realtime/ioRegistry");
+const { emitToRoom } = require("../../realtime/ioRegistry");
 const { NotFoundError, ForbiddenError } = require("../../common/errors/AppError");
 const logger = require("../../common/utils/logger");
 const { parsePagination, buildPagination } = require("../../common/utils/pagination");
@@ -18,13 +18,13 @@ function toView(notification, userId) {
 
 async function notifyUser(userId, message) {
   const notification = await Notification.create({ message, user: userId });
-  getIO()?.to(`user_${userId}`).emit("notification", toView(notification, userId));
+  emitToRoom(`user_${userId}`, "notification", toView(notification, userId));
   return toView(notification, userId);
 }
 
 async function notifyRole(role, message) {
   const notification = await Notification.create({ message, targetRole: role });
-  getIO()?.to(`role_${role}`).emit("notification", toView(notification));
+  emitToRoom(`role_${role}`, "notification", toView(notification));
   return toView(notification);
 }
 
@@ -43,18 +43,49 @@ async function notifyUserSafely(userId, message) {
 // Admin endpoint: unlike internal callers, the target comes from the request.
 async function send({ message, userId, targetRole }) {
   if (targetRole) return notifyRole(targetRole, message);
-  if (!(await User.exists({ _id: userId }))) throw new NotFoundError("User not found");
+  // Same rule as messaging: a deactivated account is indistinguishable from a
+  // missing one, and cannot be given notifications it could never read.
+  if (!(await User.exists({ _id: userId, isActive: true }))) throw new NotFoundError("User not found");
   return notifyUser(userId, message);
+}
+
+// The audience rule, in one place: notifications addressed to this user
+// personally, plus broadcasts for their role (taken from the stored user, see
+// authenticate) — never anyone else's. `read` narrows each branch by the way
+// that branch records read state: a flag for personal, per-user receipts for
+// broadcasts.
+function audienceFilter(user, read) {
+  const personal = { user: user.id };
+  const broadcast = { user: null, targetRole: user.role };
+  if (read === true)
+    return {
+      $or: [
+        { ...personal, read: true },
+        { ...broadcast, readBy: user.id },
+      ],
+    };
+  if (read === false)
+    return {
+      $or: [
+        { ...personal, read: false },
+        { ...broadcast, readBy: { $ne: user.id } },
+      ],
+    };
+  return { $or: [personal, broadcast] };
 }
 
 async function listMine(user, query) {
   const { page, limit, skip, sort } = parsePagination(query, { allowedSort: SORTABLE });
-  // Notifications addressed to the user personally, plus broadcasts for their
-  // role (from the stored user, see authenticate) — never anyone else's.
-  const filter = { $or: [{ user: user.id }, { user: null, targetRole: user.role }] };
+  // Regression: `read` was declared and validated but never applied, so
+  // ?read=false quietly returned read notifications too.
+  const filter = audienceFilter(user, query.read);
 
   const [items, total] = await Promise.all([
-    Notification.find(filter).sort(sort).skip(skip).limit(limit).lean(),
+    Notification.find(filter)
+      .sort({ ...sort, _id: sort.createdAt })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
     Notification.countDocuments(filter),
   ]);
   return { items: items.map((n) => toView(n, user.id)), pagination: buildPagination({ page, limit, total }) };
@@ -84,4 +115,4 @@ async function markRead(notificationId, user) {
   throw new NotFoundError("Notification not found");
 }
 
-module.exports = { notifyUser, notifyUserSafely, notifyRole, send, listMine, markRead, SORTABLE };
+module.exports = { notifyUser, notifyUserSafely, notifyRole, send, listMine, markRead, audienceFilter, SORTABLE };

@@ -104,7 +104,16 @@ Admin is **not** a superuser: admin can do only the operations listed below.
   `GET /notifications`). No event lets a client join a room.
 - Presence (online/offline) is sent only to users who share a conversation
   with the user — the same audience that sees `isOnline` in
-  `GET /api/v1/messages/conversations`.
+  `GET /api/v1/messages/conversations`. It is reference-counted per user, so
+  one tab closing never reports a still-connected user as offline.
+- Every client event is rate-limited per socket (30 per 10s → a
+  `TOO_MANY_REQUESTS` ack) and the transport caps a frame at 64KB, well under
+  the 1MB default, so an authenticated client cannot flood handlers or buffers
+  (`realtime/socket.js`). Limiting the _number of connections_ per client is
+  deliberately left to the proxy/infrastructure layer: an in-process counter
+  is trivially bypassed by reconnecting elsewhere.
+- Acks carry the same error codes as REST and never a stack, a driver message
+  or any internal detail.
 
 ### How it's enforced by tests
 
