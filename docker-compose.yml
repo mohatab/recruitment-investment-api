@@ -3,6 +3,9 @@ services:
     build: .
     ports:
       - "3000:3000"
+    # The process never needs to gain privileges it did not start with.
+    security_opt:
+      - no-new-privileges:true
     environment:
       # development by default so `docker compose up` works without Stripe/SMTP;
       # production additionally requires CORS_ORIGIN, Stripe and SMTP (see .env.example).
@@ -34,10 +37,17 @@ services:
 
   mongo:
     image: mongo:7
-    ports:
-      - "27017:27017"
+    # Deliberately not published to the host. This container runs without
+    # authentication, so a port mapping would put an open database on the
+    # network of whatever machine runs `docker compose up` — it used to be
+    # published on every interface. The API reaches it over the compose network
+    # by service name, and a developer who needs a shell uses
+    # `docker compose exec mongo mongosh`. A real deployment runs an
+    # authenticated, network-isolated database (see docs/SECURITY.md).
     volumes:
       - mongo-data:/data/db
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
       interval: 5s

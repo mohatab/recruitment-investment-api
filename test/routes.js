@@ -53,6 +53,11 @@ function walk(router, prefix, inherited, out) {
           // The query keys this route really accepts (a forbidden key is not
           // accepted), or null when it validates no query at all.
           queryKeys: queryValidator ? acceptedKeys(queryValidator.schema) : null,
+          // The strictest rate-limit policy guarding this route, if any.
+          rateLimit: chain
+            .filter((fn) => fn.limitPolicy)
+            .map((fn) => fn.limitPolicy.limit)
+            .sort((a, b) => a - b)[0],
         });
       }
     } else if (layer.handle.stack) {

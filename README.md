@@ -434,10 +434,14 @@ codebase and how each was fixed. Current posture:
   every download goes through an endpoint that checks authorization
 - Stripe: server never touches raw card numbers; payment confirmation is
   driven by a signature-verified webhook, not client input
-- One known accepted residual risk: a moderate `qs` advisory transitive
-  through Express 4's own `body-parser` dependency (no non-breaking fix
-  available upstream). Express 5 migration was evaluated and deliberately
-  deferred — see [Express 4 vs 5](#express-4-vs-5) below for why.
+- `npm audit` reports zero vulnerabilities: the moderate `qs` advisories
+  Express 4 pinned transitively are resolved with an `overrides` entry rather
+  than a framework migration (Express 5 remains deferred — see
+  [Express 4 vs 5](#express-4-vs-5))
+- Security headers are asserted one by one, including a `Permissions-Policy`
+  Helmet does not set; see [SECURITY.md](./docs/SECURITY.md) for the full
+  header, CORS and rate-limit contract, the deployment requirements TLS and
+  database authentication impose, and the residual risks
 
 ## Files and email
 

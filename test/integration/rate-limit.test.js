@@ -34,4 +34,15 @@ describe("rate limiting", () => {
   test("health probes are never rate limited", async () => {
     expect((await request(app).get("/health")).status).toBe(200);
   });
+
+  // The contact form is public and accepts a 5MB file, so the general
+  // 300/window limit would still allow a lot of disk writes from one client.
+  test("the public contact form is throttled well below the general API limit", async () => {
+    const submit = () => request(app).post("/api/v1/contact").send({});
+    for (let i = 0; i < 20; i++) expect((await submit()).status).toBe(400);
+
+    const res = await submit();
+    expect(res.status).toBe(429);
+    expect(res.body).toMatchObject({ success: false, error: { code: "TOO_MANY_REQUESTS" } });
+  });
 });

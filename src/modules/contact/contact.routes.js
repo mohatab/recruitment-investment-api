@@ -4,6 +4,7 @@ const validate = require("../../common/middleware/validate");
 const schemas = require("./contact.validation");
 const { uploadImage } = require("../../common/middleware/upload");
 const { authenticate, authorize } = require("../../common/middleware/auth");
+const { uploadLimiter } = require("../../common/middleware/rateLimiter");
 const ROLES = require("../../common/constants/roles");
 
 const router = express.Router();
@@ -36,7 +37,7 @@ const router = express.Router();
  *       413: { $ref: '#/components/responses/PayloadTooLarge' }
  *       429: { $ref: '#/components/responses/TooManyRequests' }
  */
-router.post("/", uploadImage.single("profileImage"), validate(schemas.create), controller.create);
+router.post("/", uploadLimiter, uploadImage.single("profileImage"), validate(schemas.create), controller.create);
 
 /**
  * @swagger

@@ -4,6 +4,7 @@ const validate = require("../../common/middleware/validate");
 const schemas = require("./user.validation");
 const { authenticate, authorize } = require("../../common/middleware/auth");
 const { uploadCv } = require("../../common/middleware/upload");
+const { uploadLimiter } = require("../../common/middleware/rateLimiter");
 const ROLES = require("../../common/constants/roles");
 
 const router = express.Router();
@@ -74,8 +75,9 @@ router.post("/me/password", validate(schemas.changePassword), controller.changeP
  *       400: { $ref: '#/components/responses/ValidationError' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       413: { $ref: '#/components/responses/PayloadTooLarge' }
+ *       429: { $ref: '#/components/responses/TooManyRequests' }
  */
-router.post("/me/cv", uploadCv.single("cv"), controller.uploadCv);
+router.post("/me/cv", uploadLimiter, uploadCv.single("cv"), controller.uploadCv);
 
 /**
  * @swagger

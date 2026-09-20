@@ -36,6 +36,13 @@ app.set("trust proxy", env.trustProxy); // default off — see TRUST_PROXY in co
 app.use(requestId);
 app.use(requestLogger);
 app.use(helmet());
+// Helmet sets no Permissions-Policy. This API needs none of these features,
+// and neither does the Swagger UI page it serves, so they are switched off for
+// this origin and anything it embeds.
+app.use((req, res, next) => {
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+  next();
+});
 // A wildcard origin is only safe here because auth is a bearer token in an
 // Authorization header, never a cookie — `credentials: true` is never set,
 // so this doesn't expose cookie-authenticated responses to arbitrary sites.

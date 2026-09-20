@@ -20,6 +20,29 @@ describe("jwt utilities", () => {
     expect(() => verifyAccessToken(token + "tamper")).toThrow();
   });
 
+  // Algorithm confusion: a verifier that accepts whatever algorithm the token
+  // claims will honour a token the attacker chose the algorithm for. The
+  // library rejects "none" on its own, but nothing stops a *different* HMAC
+  // variant unless verification pins the algorithm.
+  test("rejects a token signed with a different algorithm, even with the right secret", () => {
+    const hs512 = jsonwebtoken.sign({ sub: "abc123", role: "admin", ver: 0 }, env.jwt.accessSecret, {
+      algorithm: "HS512",
+    });
+    expect(() => verifyAccessToken(hs512)).toThrow(/invalid algorithm/i);
+  });
+
+  test("rejects an unsigned token", () => {
+    const unsigned = jsonwebtoken.sign({ sub: "abc123", role: "admin", ver: 0 }, "", { algorithm: "none" });
+    expect(() => verifyAccessToken(unsigned)).toThrow();
+  });
+
+  test("rejects a token signed with the refresh secret", () => {
+    const wrongSecret = jsonwebtoken.sign({ sub: "abc123", role: "admin", ver: 0 }, env.jwt.refreshSecret, {
+      algorithm: "HS256",
+    });
+    expect(() => verifyAccessToken(wrongSecret)).toThrow(/signature/i);
+  });
+
   test("rejects an expired token", () => {
     const expired = jsonwebtoken.sign({ sub: "abc123", role: "candidate" }, env.jwt.accessSecret, {
       algorithm: "HS256",

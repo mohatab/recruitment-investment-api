@@ -185,17 +185,44 @@ Admin is **not** a superuser: admin can do only the operations listed below.
 
 ## Transport / HTTP
 
-- **Helmet** — standard security headers (verified live: HSTS,
-  `X-Content-Type-Options`, `X-Frame-Options`).
+- **Helmet** — the standard header set, asserted header by header in
+  `test/integration/security-headers.test.js`: a CSP with `default-src 'self'`,
+  `object-src 'none'` and no `unsafe-inline`/`unsafe-eval` in `script-src`;
+  HSTS (180 days, `includeSubDomains`); `X-Content-Type-Options: nosniff`;
+  `X-Frame-Options: SAMEORIGIN`; `Referrer-Policy: no-referrer`;
+  `Cross-Origin-Opener-Policy` and `Cross-Origin-Resource-Policy: same-origin`;
+  `X-XSS-Protection: 0` (the legacy auditor is off in modern browsers and
+  introduced bugs of its own); no `X-Powered-By`. The same headers are sent on
+  error responses, which is where header middleware is usually skipped.
+  Swagger UI loads every script as a separate file, so it renders under that
+  CSP without an `unsafe-inline` exception.
+- **`Permissions-Policy`** — Helmet sets none, so the app adds
+  `camera=(), microphone=(), geolocation=(), payment=(), usb=()`. A JSON API
+  and its docs page need none of them.
 - **CORS**: configurable allowlist (`CORS_ORIGIN`), defaults to `*` — safe
   specifically because auth is a bearer token, never a cookie
   (`credentials: true` is never set); a deployment that adds cookie auth
   must also set a real origin allowlist.
-- **Rate limiting** (`express-rate-limit`): 300/15min general, 20/15min on
-  `/api/v1/auth/*` — the actual brute-force control. Disabled only under
-  `NODE_ENV=test` so the integration suite's own volume doesn't self-throttle
-  (`common/middleware/rateLimiter.js`); verified active by
-  `test/unit/rate-limiter.test.js`.
+- **Rate limiting** (`express-rate-limit`, per IP, 15-minute windows):
+
+  | Scope                                | Limit                  | Why                                                                            |
+  | ------------------------------------ | ---------------------- | ------------------------------------------------------------------------------ |
+  | Everything under `/api/v1`           | 300                    | General abuse/scraping brake                                                   |
+  | `/api/v1/auth/*`                     | 20                     | Brute force, credential stuffing, mail-bombing via forgot-password             |
+  | `POST /users/me/cv`, `POST /contact` | 20                     | Each request can write 5MB to storage, and the contact form is unauthenticated |
+  | Socket.IO events                     | 30 per 10s, per socket | Event flooding (Task 10)                                                       |
+
+  Which policy guards which route is introspected from the real routers in
+  `security-headers.test.js`, and the limits themselves are exercised in
+  `rate-limit.test.js`. Limiters are disabled only under `NODE_ENV=test` so
+  the suite's own volume doesn't self-throttle.
+
+  Deliberately **not** limited: `/health*` (an orchestrator probe must never
+  be throttled into a false "unhealthy") and `POST /payments/webhook`, which is
+  mounted before the limiter because Stripe retries a delivery it cannot
+  complete — an unsigned request there is rejected by an HMAC check before any
+  database work happens.
+
 - **Request size limit**: `express.json({ limit: "1mb" })`.
 
 ## File uploads and downloads
@@ -313,16 +340,53 @@ and deep format parsing — a PDF with a valid header is accepted as a PDF.
   and PEM headers across the repository (see `FINAL_PROJECT_REPORT.md` for
   the exact command run and its empty result), and `.env` is gitignored.
 
+## Dependencies
+
+`npm audit` reports **0 vulnerabilities**. The three moderate `qs` advisories
+that Express 4 pinned transitively are resolved by an `overrides` entry
+(`qs: ^6.16.0`) rather than by migrating framework: `qs` 6.16 is a patch
+within the range Express already expects, and the whole suite plus the live
+container verify that request parsing still behaves. Express 5 remains
+deferred for the reason in the README ("Express 4 vs 5").
+
+`multer` is on the 1.x LTS line, which upstream has deprecated in favour of
+2.x. It carries no open advisory today, and this project uses only
+`memoryStorage` with its own validation on top, so the upgrade is a scheduled
+maintenance item rather than a vulnerability.
+
+## Deployment requirements (not enforceable by the code)
+
+- **The database must require authentication and must not be reachable from
+  the internet.** The `mongo` service in `docker-compose.yml` runs without
+  credentials because it is a development convenience; its port is published
+  on `127.0.0.1` only, so `docker compose up` cannot put an open database on
+  the host's network. A real deployment uses a managed or credentialed
+  MongoDB, reachable only from the API's network.
+- **`TRUST_PROXY` must match the actual topology.** It is off by default; turn
+  it on only behind a proxy that overwrites `X-Forwarded-For`, otherwise
+  clients can spoof their IP and walk past every rate limiter.
+- **TLS terminates in front of the app.** HSTS is sent, but the process itself
+  speaks HTTP.
+
 ## Known, accepted residual risks
 
-- A moderate `qs` advisory transitive through Express 4's `body-parser`.
-  Express 5 was evaluated and deferred for a concrete, verified reason
-  (`express-mongo-sanitize` breaks under Express 5's read-only `req.query`)
-  — see the README's "Express 4 vs 5" section.
-- File upload validation is MIME+extension, not magic-byte content
-  sniffing (see File uploads above).
-- Socket.IO presence/room delivery is single-process (in-memory), not
-  designed for horizontal scaling without adding a Redis adapter.
+- **Registration discloses whether an email is already registered** (409
+  `CONFLICT`). Login, password reset and the "recipient not found" paths are
+  all deliberately non-disclosing, but a signup form that cannot say "this
+  address is taken" is not usable. Rate limiting (20/15min) is what stops it
+  becoming a bulk enumeration oracle.
+- **No malware scanning of uploads.** Content is verified against its declared
+  type by magic bytes, stored outside any served path, and only ever returned
+  as an attachment with `nosniff` — but a valid PDF containing something
+  hostile is still stored. A scanning sidecar is the next increment if this
+  ever accepted files from untrusted parties at scale.
+- **Archive/image decompression bombs are not applicable**: no archive format
+  is accepted and no image is ever decoded or resized server-side. Uploads are
+  size-capped at 5MB and stored as opaque bytes.
+- **Socket.IO connection counts are not limited in-process.** Per-socket event
+  flooding is, but a client can open many sockets; capping connections belongs
+  at the proxy, since an in-process counter is bypassed by reconnecting.
+- **Presence and room delivery are single-process** (in-memory), by design.
 
-None of the above are HIGH/CRITICAL; all are documented rather than
-silently left for someone else to discover.
+None of these are HIGH/CRITICAL, and each is a documented decision rather than
+something left for someone else to discover.
