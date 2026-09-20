@@ -118,3 +118,50 @@ describe("success assessment (public heuristic endpoint)", () => {
     expect(res.body.data.method).toBe("rule_based_heuristic");
   });
 });
+
+// The profile endpoints report "created" from the upsert's own result rather
+// than from a separate exists() probe. These pin the distinction that result
+// drives, in both directions.
+describe("profile upserts report creation from the write itself", () => {
+  const validStartupProfile = {
+    name: "Upsert Labs",
+    description: "We test upserts",
+    totalRaisingCents: 1_000_000_00,
+    minInvestmentCents: 1_000_00,
+    industries: ["saas"],
+    stage: "seed",
+  };
+
+  test("the first PUT creates (201) and the second updates in place (200)", async () => {
+    const { accessToken, user } = await registerUser({ role: "startup" });
+    const put = (body) =>
+      request(app).put("/api/v1/startups/me").set("Authorization", `Bearer ${accessToken}`).send(body);
+
+    const created = await put(validStartupProfile);
+    expect(created.status).toBe(201);
+
+    const updated = await put({ ...validStartupProfile, name: "Upsert Labs II" });
+    expect(updated.status).toBe(200);
+    expect(updated.body.data._id).toBe(created.body.data._id); // same document
+    expect(updated.body.data.name).toBe("Upsert Labs II");
+    expect(updated.body.data.owner).toBe(user._id);
+
+    // And still exactly one profile for this owner.
+    const Startup = require("../../src/modules/investment/startups/startup.model");
+    expect(await Startup.countDocuments({ owner: user._id })).toBe(1);
+  });
+
+  test("the same holds for investor criteria", async () => {
+    const { accessToken } = await registerUser({ role: "investor" });
+    const put = (body) =>
+      request(app).put("/api/v1/investors/me").set("Authorization", `Bearer ${accessToken}`).send(body);
+
+    const criteria = {
+      criteria: { minInvestmentCents: 1_000_00, maxInvestmentCents: 10_000_00, industries: ["saas"] },
+    };
+    expect((await put(criteria)).status).toBe(201);
+    const second = await put({ criteria: { ...criteria.criteria, industries: ["fintech"] } });
+    expect(second.status).toBe(200);
+    expect(second.body.data.criteria.industries).toEqual(["fintech"]);
+  });
+});

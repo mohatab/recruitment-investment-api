@@ -7,13 +7,15 @@ const SORTABLE = ["createdAt", "name", "totalRaisingCents", "minInvestmentCents"
 
 // Reports whether this created the profile so the route can answer 201 vs 200.
 async function upsertMine(ownerId, data) {
-  const existed = await Startup.exists({ owner: ownerId });
-  const startup = await Startup.findOneAndUpdate(
+  // One round trip: the driver already reports whether the upsert matched an
+  // existing profile, so the separate exists() probe was both an extra query
+  // and a race (two concurrent first saves could each report "created").
+  const result = await Startup.findOneAndUpdate(
     { owner: ownerId },
     { $set: data, $setOnInsert: { owner: ownerId } },
-    { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
+    { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true, includeResultMetadata: true }
   );
-  return { startup, created: !existed };
+  return { startup: result.value, created: !result.lastErrorObject.updatedExisting };
 }
 
 async function getMine(ownerId) {

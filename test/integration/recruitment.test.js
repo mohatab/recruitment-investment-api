@@ -445,3 +445,24 @@ describe("database constraints", () => {
     );
   });
 });
+
+// The status change loads the posting only to authorize the recruiter and to
+// name the job in the notification, so it projects just those two fields.
+// This is what proves the projection still carries everything that is used.
+describe("application status notifications", () => {
+  test("the candidate is told which posting moved, by title", async () => {
+    const job = await postJob(recruiter, { title: "Platform Engineer" });
+    const applied = await applyTo(candidate, job._id);
+    expect(applied.status).toBe(201);
+
+    const moved = await request(app)
+      .patch(`/api/v1/applications/${applied.body.data._id}/status`)
+      .set(as(recruiter))
+      .send({ status: "under_review" });
+    expect(moved.status).toBe(200);
+
+    const notifications = await request(app).get("/api/v1/notifications").set(as(candidate));
+    expect(notifications.status).toBe(200);
+    expect(notifications.body.data[0].message).toBe('Your application for "Platform Engineer" is now "under_review"');
+  });
+});

@@ -54,7 +54,14 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-userSchema.index({ role: 1 });
+// The admin user list: `{ role? }` newest first. The sort key is part of the
+// index because a role filter alone left the server sorting every matching
+// user in memory, and the unfiltered list scanned the whole collection
+// (measured: 500 and 2,000 documents examined respectively, to return 20).
+// Users are written rarely — registration, a profile edit, a session-version
+// bump — so two small indexes here are cheap.
+userSchema.index({ role: 1, createdAt: -1 });
+userSchema.index({ createdAt: -1 });
 
 userSchema.pre("save", async function hashPassword(next) {
   if (!this.isModified("password")) return next();

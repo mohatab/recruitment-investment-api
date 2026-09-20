@@ -97,15 +97,69 @@ Every index below exists because a real query in the codebase needs it —
 none were added speculatively.
 
 - `User.email` — unique (login lookup, duplicate-registration check)
-- `User.role` — admin user-listing filter
+- `User.{role, createdAt}` and `User.{createdAt}` — the admin user list, filtered by role or not, newest first
 - `Job.{status, createdAt}` (public list, newest first), `Job.{recruiter, createdAt}` (`/jobs/mine`), `Job.{title, role, tags}` (text) — free-text search
 - `Application.{job, applicant}` — **unique**, the duplicate-prevention constraint (its `job` prefix also serves lookups by job); `Application.{job, createdAt}` and `Application.{applicant, createdAt}` — the two list endpoints
-- `Startup.{owner}` — unique; `Startup.{industries, stage}` — the browse/matching filter
+- `Startup.{owner}` — unique; `Startup.{industries, stage, createdAt}` — the browse/matching filter, newest first; `Startup.{createdAt}` — the unfiltered browse list
 - `Investment.{investor, createdAt}` and `Investment.{startup, createdAt}` — the two list endpoints; `Investment.{stripePaymentIntentId}` (unique, sparse) — the webhook's lookup key
 - `StripeEvent.{eventId}` — unique, the webhook idempotency guarantee; `StripeEvent.{investment, createdAt}` — per-investment payment history; `StripeEvent.{createdAt}` — TTL, 90-day retention
-- `Notification.{user, createdAt}` and `Notification.{targetRole, createdAt}` — `listMine` queries `$or: [{user}, {targetRole}]` sorted by `createdAt`; Mongo satisfies an `$or` by index union, running each branch against its own index, so each branch gets its own compound index with the sort key included, rather than one lone single-field index per branch that can't also serve the sort
-- `Message.{roomId, createdAt}` — every message query filters by `roomId` and sorts by `createdAt`; this single compound index serves both (a separate single-field index on `roomId` alone would be redundant, since this compound index's `roomId`-only prefix already serves a `roomId`-alone query — an earlier version of this schema had exactly that redundant index, removed once the query patterns were checked against it)
+- `Notification.{user, createdAt, _id}` and `Notification.{targetRole, createdAt, _id}` — `listMine` queries `$or: [{user}, {targetRole}]` sorted by `createdAt`; Mongo satisfies an `$or` by index union, running each branch against its own index, so each branch gets its own compound index with the sort key included, rather than one lone single-field index per branch that can't also serve the sort
+- `Message.{roomId, createdAt, _id}` — message history, in the total order Task 10 established; the `roomId` prefix also serves `countDocuments({ roomId })` without touching a document. A separate single-field index on `roomId` would be redundant with this prefix — an earlier version of this schema had exactly that, removed once the query patterns were checked
+- `Message.{sender, createdAt, receiver}` and `Message.{receiver, createdAt, sender}` — the conversation list (an `$or` whose branches each read in sort order) and `conversationPartners()`, whose projection is the trailing key, making that lookup index-only
 - `RefreshToken`/`AuthToken.{expiresAt}` — TTL indexes for automatic expiry; `AuthToken.{user, purpose, createdAt}` serves the supersede and cooldown lookups
+
+## Query plans and how they were checked
+
+Indexes were not chosen by reading schemas. `scripts/db-explain.js` builds a
+fixture of realistic size (2,000 users, 5,000 jobs, 20,000 applications,
+40,000 messages, 20,000 notifications) and runs `explain("executionStats")`
+over every important query shape, reporting which index won, how many keys and
+documents were examined to return a page, and whether the server had to sort in
+memory. Re-run it after any schema or query change:
+
+```bash
+MONGODB_URI=mongodb://localhost:27017/perf-audit node scripts/db-explain.js
+```
+
+What it found, and what the sort keys in those compound indexes fixed
+(documents examined to return one page of 20):
+
+| Query                                                   | Before                       | After                        |
+| ------------------------------------------------------- | ---------------------------- | ---------------------------- |
+| Message history (`GET /messages/:userId`)               | 10,000 docs + in-memory sort | 20 docs, no sort stage       |
+| `conversationPartners()` (presence, per socket connect) | 10,047 docs                  | 0 — answered from index keys |
+| Notification list                                       | 3,344 docs + in-memory sort  | 40 docs, no sort stage       |
+| Notification list, unread only                          | 1,676 docs + in-memory sort  | 21 docs, no sort stage       |
+| Admin user list, by role                                | 500 docs + in-memory sort    | 20 docs                      |
+| Admin user list, unfiltered                             | full collection scan + sort  | 20 docs                      |
+| Startup browse, filtered                                | 36 docs + in-memory sort     | 20 docs                      |
+| Startup browse, unfiltered                              | full collection scan + sort  | 20 docs                      |
+| Investor criteria match                                 | 126 docs + in-memory sort    | 36 docs                      |
+
+The message-history case is the one worth understanding: Task 10 made the order
+total by sorting on `(createdAt, _id)`, and an index of `{roomId, createdAt}`
+cannot produce that order — so the server was reading an entire conversation
+and sorting it in memory to hand back twenty messages. Putting `_id` in the
+index made the same query a bounded index walk.
+
+`test/integration/query-plans.test.js` pins these conclusions: it asserts the
+winning index, the absence of a collection scan or blocking sort, and that
+documents examined stay proportional to the page — never elapsed time, which
+would be flaky.
+
+### Costs that are inherent, not defects
+
+- **Text search** (`GET /jobs?search=`) uses the text index, then sorts the
+  matches by `createdAt` in memory: a `$text` query must use the text index, so
+  no other index can supply that order. Measured at 3,284 documents examined
+  for a page. Bounded by how many postings match the term, and acceptable at
+  this scale; escaping a second search engine was out of scope by design.
+- **Offset pagination** costs one index key per skipped document: page 200 of
+  the job list examined 4,000 keys. That is the price of the `page`/`limit`
+  contract the API declares, and it is paid by deep pages only.
+- **The conversation list** groups every message a user has exchanged to find
+  their partners and each thread's last message — unavoidable without a
+  denormalized `Conversation` collection (see the deferred list below).
 
 ## Investment constraints
 
@@ -182,6 +236,25 @@ none were added speculatively.
 - Existing float amounts are converted by
   `scripts/migrate-money-to-minor-units.js` (idempotent, `--dry-run`
   supported, reports any value that was not a whole number of cents).
+
+## Index maintenance
+
+Mongoose creates missing indexes on connect, but never drops one a model no
+longer declares. `scripts/sync-indexes.js` is the explicit step that does:
+
+```bash
+node scripts/sync-indexes.js --dry-run   # report the difference
+node scripts/sync-indexes.js             # apply it
+```
+
+It is idempotent, touches only indexes (never documents), and is deliberately
+not part of application startup — dropping an index is a decision to take
+knowingly, and building one over a large collection is not something a boot
+sequence should trigger. Task 11 supersedes four indexes
+(`Message.{roomId, createdAt}`, `Notification.{user, createdAt}`,
+`User.{role}`, `Startup.{industries, stage}`), each replaced by a compound
+index that starts with the same keys, so running it after deploying is what
+stops the old ones costing writes forever.
 
 ## Known, accepted trade-offs
 

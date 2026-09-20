@@ -407,6 +407,12 @@ transition table, pagination parsing, and the success-assessment heuristic.
 
 ## CI/CD
 
+Two database scripts support the schema rather than the app:
+`scripts/db-explain.js` reports the query plan of every important query shape
+against a realistic fixture, and `scripts/sync-indexes.js` (`--dry-run`
+supported) brings a deployed database's indexes in line with the models,
+dropping ones no model declares any more. Neither runs at startup.
+
 `.github/workflows/ci.yml` runs on every push/PR: install → lint → format
 check → test with coverage → `npm audit` (informational) → Docker build.
 
@@ -724,6 +730,18 @@ release, or this project replaces it with a sanitizer that mutates
 Deliberately not built — each one is a product decision or a scale threshold
 this project has not reached, not an oversight:
 
+- **A `Conversation` collection.** The conversation list groups every message a
+  user has exchanged to find their partners and each thread's last message.
+  That is fine at the current scale and measured
+  ([DATABASE.md](./docs/DATABASE.md#query-plans-and-how-they-were-checked)),
+  but a denormalized per-pair document — last message, updated timestamp,
+  unread counts — is what removes the scan. It is a schema change with a data
+  migration, not an index change, which is why Task 11 measured it and left it.
+- **Cursor (keyset) pagination.** Offset paging costs one index key per skipped
+  document, so deep pages get linearly more expensive. The `page`/`limit`
+  contract is part of the public API, so replacing it is an API decision rather
+  than a database one; message history and notification lists are the
+  candidates if deep paging ever becomes a real access pattern.
 - **Horizontal realtime scaling.** Presence is an in-memory map and rooms use
   the default adapter, so both are per process: a second instance would need
   Redis (presence store + Socket.IO adapter) before it could be added.

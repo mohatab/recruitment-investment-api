@@ -43,7 +43,11 @@ startupSchema.virtual("remainingCents").get(function remainingCents() {
   return Math.max(0, this.totalRaisingCents - this.raisedSoFarCents - this.reservedCents);
 });
 
-startupSchema.index({ industries: 1, stage: 1 });
+// Browsing and investor matching filter on industries/stage and list newest
+// first; the sort key is in the index so those pages are served from it.
+startupSchema.index({ industries: 1, stage: 1, createdAt: -1 });
+// The unfiltered browse list, which otherwise scans every startup profile.
+startupSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model("Startup", startupSchema);
 module.exports.STAGES = STAGES;

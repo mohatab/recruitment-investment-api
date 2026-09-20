@@ -89,7 +89,11 @@ async function listApplications(filter, query, populate) {
 }
 
 async function updateStatus(applicationId, recruiterId, nextStatus) {
-  const application = await Application.findById(applicationId).populate("job");
+  // Only two job fields are needed here — the recruiter to authorize against
+  // and the title for the notification. Populating the whole posting pulled
+  // its description and responsibilities (up to 10,000 characters each) into
+  // memory on every status change.
+  const application = await Application.findById(applicationId).populate("job", "recruiter title");
   if (!application) throw new NotFoundError("Application not found");
   // job is null if the posting was deleted; assertOwner treats that as not owned.
   assertOwner(application.job?.recruiter, recruiterId, "You can only manage applications for your own job postings");

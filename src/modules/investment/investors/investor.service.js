@@ -2,13 +2,15 @@ const Investor = require("./investor.model");
 const { NotFoundError } = require("../../../common/errors/AppError");
 
 async function upsertMine(ownerId, data) {
-  const existed = await Investor.exists({ owner: ownerId });
-  const investor = await Investor.findOneAndUpdate(
+  // One round trip: the driver already reports whether the upsert matched an
+  // existing profile, so the separate exists() probe was both an extra query
+  // and a race (two concurrent first saves could each report "created").
+  const result = await Investor.findOneAndUpdate(
     { owner: ownerId },
     { $set: data, $setOnInsert: { owner: ownerId } },
-    { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
+    { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true, includeResultMetadata: true }
   );
-  return { investor, created: !existed };
+  return { investor: result.value, created: !result.lastErrorObject.updatedExisting };
 }
 
 async function getMine(ownerId) {

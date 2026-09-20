@@ -17,10 +17,15 @@ const notificationSchema = new mongoose.Schema(
 );
 
 // listMine() queries `{ $or: [{ user }, { targetRole }] }` sorted by
-// createdAt — Mongo satisfies an $or by index union, running each branch
-// against its own index, so each branch gets its own compound index with
-// the sort key included rather than one lone index per field.
-notificationSchema.index({ user: 1, createdAt: -1 });
-notificationSchema.index({ targetRole: 1, createdAt: -1 });
+// (createdAt, _id) — Mongo satisfies an $or by index union, running each
+// branch against its own index, so each branch gets its own compound index
+// with the sort keys included rather than one lone index per field. Both sort
+// keys have to be in the index: with only createdAt, the tiebreak forced the
+// whole audience to be sorted in memory (measured: 3,344 documents examined to
+// return 20). The optional `read` filter stays a residual predicate — it only
+// narrows a set that is already scoped to one user, and giving it its own
+// index would cost a write on every notification to save a handful of reads.
+notificationSchema.index({ user: 1, createdAt: -1, _id: -1 });
+notificationSchema.index({ targetRole: 1, createdAt: -1, _id: -1 });
 
 module.exports = mongoose.model("Notification", notificationSchema);
