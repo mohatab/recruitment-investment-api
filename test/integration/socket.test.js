@@ -6,7 +6,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 const { io: ioClient } = require("socket.io-client");
 const jsonwebtoken = require("jsonwebtoken");
-const { app, request, registerUser, createAdmin } = require("../helpers");
+const { app, request, registerUser, createAdmin, waitFor } = require("../helpers");
 const { initSocket, serverOptions, EVENT_LIMIT } = require("../../src/realtime/socket");
 const { setIO } = require("../../src/realtime/ioRegistry");
 const { isOnline, connectionCount } = require("../../src/realtime/presence");
@@ -69,6 +69,14 @@ const rejected = (client) =>
   });
 const emitWithAck = (client, ...args) => client.timeout(2000).emitWithAck(...args);
 
+// Deterministic synchronisation. `until` polls for the state a test is
+// actually waiting for, so a slow machine waits longer instead of failing;
+// `quiet` is the bounded grace period used only to assert that *nothing*
+// arrived, and only after something observable has already come back through
+// the same path — there is no event to wait for in that case.
+const until = (fn, timeoutMs = 5000) => waitFor(fn, { timeoutMs });
+const quiet = () => new Promise((r) => setTimeout(r, 150));
+
 describe("Socket.IO handshake authentication", () => {
   test("connecting without a token is rejected", async () => {
     const err = await rejected(connectWithToken(null));
@@ -119,7 +127,6 @@ describe("presence (who may see that a user is online)", () => {
     client.on("presence", (e) => events.push(e));
     return events;
   };
-  const settle = () => new Promise((r) => setTimeout(r, 250));
 
   // Regression: presence went to role_<role>, i.e. every user with the same
   // role, while REST only shows isOnline to conversation partners.
@@ -139,9 +146,9 @@ describe("presence (who may see that a user is online)", () => {
 
     const aliceSocket = connectWithToken(alice.accessToken);
     await connected(aliceSocket);
-    await settle();
+    await until(() => partnerSaw.length === 1);
     aliceSocket.close();
-    await settle();
+    await until(() => partnerSaw.length === 2);
 
     expect(partnerSaw).toEqual([
       { userId: alice.user._id, online: true },
@@ -165,8 +172,9 @@ describe("presence (who may see that a user is online)", () => {
     await connected(tab1);
     const tab2 = connectWithToken(alice.accessToken);
     await connected(tab2);
+    await until(() => seen.length === 1);
     tab1.close();
-    await settle();
+    await quiet();
     expect(seen).toEqual([{ userId: alice.user._id, online: true }]);
   });
 });
@@ -200,7 +208,7 @@ describe("chat:message", () => {
     const ack = await emitWithAck(aliceSocket, "chat:message", { receiverId: bob.user._id, body: "hi bob" });
     expect(ack).toMatchObject({ ok: true, data: { body: "hi bob" } });
     expect((await bobReceived).body).toBe("hi bob");
-    await new Promise((r) => setTimeout(r, 200));
+    await quiet();
     expect(eveReceived).toBe(false);
   });
 
@@ -311,13 +319,11 @@ describe("malformed and failing socket events cannot crash the server", () => {
 // receives exactly what its rooms receive, so joining is never something a
 // client may ask for.
 describe("rooms are derived from the session, never from the client", () => {
-  const settle = () => new Promise((r) => setTimeout(r, 250));
-
   test("a socket is in exactly its own user room and its role room", async () => {
     const user = await registerUser({ role: "candidate" });
     const client = connectWithToken(user.accessToken);
     await connected(client);
-    await settle();
+    await until(() => [...io.sockets.sockets.values()].some((s) => s.user.id === user.user._id));
 
     const serverSocket = [...io.sockets.sockets.values()].find((s) => s.user.id === user.user._id);
     expect([...serverSocket.rooms].sort()).toEqual([serverSocket.id, `user_${user.user._id}`, "role_candidate"].sort());
@@ -336,7 +342,7 @@ describe("rooms are derived from the session, never from the client", () => {
       eveSocket.emit(event, `user_${bob.user._id}`);
       eveSocket.emit(event, "role_admin");
     }
-    await settle();
+    await quiet();
 
     const eveServerSocket = [...io.sockets.sockets.values()].find((s) => s.user.id === eve.user._id);
     expect([...eveServerSocket.rooms]).not.toContain(`user_${bob.user._id}`);
@@ -348,7 +354,7 @@ describe("rooms are derived from the session, never from the client", () => {
     const bobSaw = new Promise((resolve) => bobSocket.on("message", resolve));
     await emitWithAck(aliceSocket, "chat:message", { receiverId: bob.user._id, body: "for bob only" });
     expect((await bobSaw).body).toBe("for bob only");
-    await settle();
+    await quiet();
     expect(eveSaw).toBe(false);
   });
 
@@ -375,7 +381,7 @@ describe("rooms are derived from the session, never from the client", () => {
     const received = await candidateSaw;
     expect(received.message).toBe("candidates only");
     expect(received.readBy).toBeUndefined(); // who else read it is never shipped
-    await settle();
+    await quiet();
     expect(recruiterSaw).toBe(false);
   });
 
@@ -397,14 +403,12 @@ describe("rooms are derived from the session, never from the client", () => {
       .expect(201);
 
     expect((await targetSaw).message).toBe("just for you");
-    await settle();
+    await quiet();
     expect(otherSaw).toBe(false);
   });
 });
 
 describe("chat:message payload handling", () => {
-  const settle = () => new Promise((r) => setTimeout(r, 200));
-
   test("client-supplied identity and metadata are stripped, not stored", async () => {
     const [alice, bob, mallory] = await Promise.all([registerUser(), registerUser(), registerUser()]);
     const socket = connectWithToken(alice.accessToken);
@@ -475,7 +479,7 @@ describe("chat:message payload handling", () => {
 
     const ack = await emitWithAck(aliceSocket, "chat:message", { receiverId: bob.user._id, body: "never stored" });
     expect(ack).toEqual({ ok: false, error: { code: "INTERNAL_ERROR", message: "Something went wrong" } });
-    await settle();
+    await quiet();
     expect(bobSaw).toBe(false);
     expect(await Message.countDocuments({ body: "never stored" })).toBe(0);
   });
@@ -550,7 +554,6 @@ describe("abuse protection", () => {
 });
 
 describe("presence across several connections", () => {
-  const settle = () => new Promise((r) => setTimeout(r, 250));
   const presenceEvents = (client) => {
     const events = [];
     client.on("presence", (e) => events.push(e));
@@ -575,18 +578,18 @@ describe("presence across several connections", () => {
       connectWithToken(alice.accessToken),
     ];
     await Promise.all(tabs.map(connected));
-    await settle();
-    expect(connectionCount(alice.user._id)).toBe(3);
+    await until(() => connectionCount(alice.user._id) === 3);
+    await until(() => seen.length === 1);
     expect(seen).toEqual([{ userId: alice.user._id, online: true }]);
 
     tabs[0].close();
     tabs[1].close();
-    await settle();
+    await until(() => connectionCount(alice.user._id) === 1);
     expect(isOnline(alice.user._id)).toBe(true);
     expect(seen.length).toBe(1); // still no offline announcement
 
     tabs[2].close();
-    await settle();
+    await until(() => seen.length === 2);
     expect(isOnline(alice.user._id)).toBe(false);
     expect(seen).toEqual([
       { userId: alice.user._id, online: true },
@@ -607,12 +610,12 @@ describe("presence across several connections", () => {
 
     const first = connectWithToken(alice.accessToken);
     await connected(first);
-    await settle();
+    await until(() => seen.length === 1);
     first.close();
-    await settle();
+    await until(() => seen.length === 2);
     const second = connectWithToken(alice.accessToken);
     await connected(second);
-    await settle();
+    await until(() => seen.length === 3);
 
     expect(seen.map((e) => e.online)).toEqual([true, false, true]);
     expect(connectionCount(alice.user._id)).toBe(1);
@@ -622,12 +625,10 @@ describe("presence across several connections", () => {
     const alice = await registerUser();
     const sockets = Array.from({ length: 5 }, () => connectWithToken(alice.accessToken));
     await Promise.all(sockets.map(connected));
-    await settle();
-    expect(connectionCount(alice.user._id)).toBe(5);
+    await until(() => connectionCount(alice.user._id) === 5);
 
     sockets.forEach((s) => s.close());
-    await settle();
-    expect(connectionCount(alice.user._id)).toBe(0);
+    await until(() => connectionCount(alice.user._id) === 0);
     expect(isOnline(alice.user._id)).toBe(false);
   });
 
@@ -644,10 +645,12 @@ describe("presence across several connections", () => {
 
     const tabs = [connectWithToken(alice.accessToken), connectWithToken(alice.accessToken)];
     await Promise.all(tabs.map(connected));
-    await settle();
+    await until(() => connectionCount(alice.user._id) === 2);
+    await until(() => seen.length === 1);
 
     await request(app).post("/api/v1/auth/logout-all").set("Authorization", `Bearer ${alice.accessToken}`).expect(200);
-    await settle();
+    await until(() => connectionCount(alice.user._id) === 0);
+    await until(() => seen.length === 2);
 
     expect(connectionCount(alice.user._id)).toBe(0);
     expect(seen.map((e) => e.online)).toEqual([true, false]);
@@ -663,9 +666,10 @@ describe("presence across several connections", () => {
 
     const aliceSocket = connectWithToken(alice.accessToken);
     await connected(aliceSocket);
-    await settle();
+    await until(() => connectionCount(alice.user._id) === 1);
     aliceSocket.close();
-    await settle();
+    await until(() => connectionCount(alice.user._id) === 0);
+    await quiet();
     expect(seen).toEqual([]);
   });
 });

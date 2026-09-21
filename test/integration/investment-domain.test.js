@@ -411,6 +411,7 @@ describe("ownership, privacy and client-controlled fields", () => {
 
 describe("database constraints", () => {
   test("one investment per PaymentIntent (unique, sparse)", async () => {
+    await Investment.init(); // the unique index is the thing under test
     const [a, b] = await Promise.all([
       Investment.create({ investor: investor.user._id, startup: startup._id, amountCents: 100 }),
       Investment.create({ investor: investor.user._id, startup: startup._id, amountCents: 100 }),
@@ -434,6 +435,7 @@ describe("database constraints", () => {
   });
 
   test("the indexes the investment lists rely on exist", async () => {
+    await Investment.init(); // wait for the background index build, not for another test
     const indexes = await Investment.collection.indexes();
     const keys = indexes.map((i) => JSON.stringify(i.key));
     expect(keys).toEqual(

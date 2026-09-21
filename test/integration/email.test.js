@@ -45,6 +45,17 @@ beforeEach(() => {
   sendMail.mockResolvedValue({ messageId: "test" });
 });
 
+// Mail is dispatched without being awaited, and a failed send retries after a
+// delay, so a test can end with work still in flight. Draining it here keeps
+// one test's stray attempt out of the next test's expectations — the failure
+// it caused only appeared under `jest --randomize`.
+afterEach(async () => {
+  for (let seen = -1; seen !== sendMail.mock.calls.length;) {
+    seen = sendMail.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 600)); // longer than the retry delay
+  }
+});
+
 describe("templates", () => {
   const HOSTILE = '<img src=x onerror="alert(1)">';
 
@@ -82,27 +93,38 @@ describe("templates", () => {
 });
 
 describe("delivery", () => {
+  // Registration dispatches its verification mail without awaiting it, so a
+  // send started by an earlier test can land in the middle of this one. These
+  // tests therefore count the attempts *their own* call made, as a delta,
+  // rather than reading a mock counter that anything in the file can move.
+  const attemptsDuring = async (fn) => {
+    const before = sendMail.mock.calls.length;
+    const result = await fn();
+    return { result, attempts: sendMail.mock.calls.length - before };
+  };
+
   test("is configured in this environment, and a successful send reports it", async () => {
     expect(isConfigured()).toBe(true);
-    await expect(sendEmail({ to: "a@example.com", subject: "s", text: "t", html: "<p>t</p>" })).resolves.toEqual({
-      sent: true,
-    });
-    expect(sendMail).toHaveBeenCalledTimes(1);
-    expect(sendMail.mock.calls[0][0].from).toBe(env.email.from);
+
+    const { result, attempts } = await attemptsDuring(() =>
+      sendEmail({ to: "a@example.com", subject: "s", text: "t", html: "<p>t</p>" })
+    );
+    expect(result).toEqual({ sent: true });
+    expect(attempts).toBe(1);
+    expect(sendMail.mock.calls.at(-1)[0].from).toBe(env.email.from);
   });
 
   test("a transient failure is retried once; a persistent one resolves instead of throwing", async () => {
     sendMail.mockRejectedValueOnce(new Error("ECONNRESET")).mockResolvedValueOnce({ messageId: "ok" });
-    await expect(sendEmail({ to: "a@example.com", subject: "s", text: "t" })).resolves.toEqual({ sent: true });
-    expect(sendMail).toHaveBeenCalledTimes(2);
+    const transient = await attemptsDuring(() => sendEmail({ to: "a@example.com", subject: "s", text: "t" }));
+    expect(transient.result).toEqual({ sent: true });
+    expect(transient.attempts).toBe(2);
 
     sendMail.mockReset();
     sendMail.mockRejectedValue(Object.assign(new Error("connection timed out"), { code: "ETIMEDOUT" }));
-    await expect(sendEmail({ to: "a@example.com", subject: "s", text: "t" })).resolves.toEqual({
-      sent: false,
-      reason: "ETIMEDOUT",
-    });
-    expect(sendMail).toHaveBeenCalledTimes(2);
+    const persistent = await attemptsDuring(() => sendEmail({ to: "a@example.com", subject: "s", text: "t" }));
+    expect(persistent.result).toEqual({ sent: false, reason: "ETIMEDOUT" });
+    expect(persistent.attempts).toBe(2); // one try, one retry, then it gives up
   });
 
   test("a failure logs the outcome and the recipient domain — never the body, address or credentials", async () => {
@@ -125,10 +147,13 @@ describe("authentication flows survive a mail outage", () => {
   test("registration still creates the account and its verification token when SMTP is down", async () => {
     sendMail.mockRejectedValue(new Error("SMTP unreachable"));
 
+    const baseline = sendMail.mock.calls.length;
     const { res, user, accessToken } = await registerUser({}, { verified: false });
     const logs = await captureLogs(async () => {
-      // The send is fire-and-forget; give it both attempts before asserting.
-      await waitFor(() => sendMail.mock.calls.length >= 2, { timeoutMs: 8000 });
+      // The send is fire-and-forget and retries once after a delay. Waiting
+      // for *this* registration's two attempts — not for a total — is what
+      // stops a still-pending retry landing inside the next test.
+      await waitFor(() => sendMail.mock.calls.length >= baseline + 2, { timeoutMs: 8000 });
     });
 
     expect(res.status).toBe(201);
@@ -143,9 +168,12 @@ describe("authentication flows survive a mail outage", () => {
     const { user } = await registerUser();
     sendMail.mockRejectedValue(new Error("SMTP unreachable"));
 
+    // Registration already sent one mail; count this flow's attempts from
+    // here, so the reset mail's retry is complete when the test ends.
+    const baseline = sendMail.mock.calls.length;
     const logs = await captureLogs(async () => {
       await request(app).post("/api/v1/auth/forgot-password").send({ email: user.email }).expect(200);
-      await waitFor(() => sendMail.mock.calls.length >= 2, { timeoutMs: 8000 });
+      await waitFor(() => sendMail.mock.calls.length >= baseline + 2, { timeoutMs: 8000 });
     });
 
     const stored = await AuthToken.findOne({ user: user._id, purpose: "password_reset" });

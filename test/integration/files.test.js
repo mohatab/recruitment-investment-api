@@ -74,6 +74,12 @@ describe("downloading a CV", () => {
     expect(res.body.toString()).not.toContain("%PDF");
   });
 
+  // Mutation note: replacing the `role === recruiter` check in
+  // assertCanReadCv with `true` does not fail any test, and deliberately so.
+  // The branch it guards only grants access to someone who owns a job the
+  // target applied to, and only a recruiter can own a job — so the role check
+  // is defence in depth over a rule the ownership query already enforces.
+  // Widening the *ownership* query does fail, which is the part that matters.
   test("a recruiter may read it only after that user applied to one of their own jobs", async () => {
     await uploadCv(owner);
     const recruiter = await registerUser({ role: "recruiter" });
@@ -298,27 +304,57 @@ describe("storage keys are server-generated", () => {
 // The storage driver is the last place a key could become a filesystem path,
 // so it re-validates rather than trusting its caller.
 describe("the storage driver refuses to escape its root", () => {
-  test.each([
-    "../escaped.pdf",
-    "cv/../../escaped.pdf",
-    "/etc/passwd",
-    "C:\\Windows\\win.ini",
-    "cv/..\\..\\escaped.pdf",
-    "cv/x\u0000.pdf",
-    "",
-  ])("rejects the key %j", async (key) => {
-    await expect(localStorage.save(key, PDF)).rejects.toMatchObject({ statusCode: 404 });
-    await expect(localStorage.read(key)).rejects.toMatchObject({ statusCode: 404 });
-    expect(await localStorage.exists(key)).toBe(false);
-    expect(fs.existsSync(path.resolve(localStorage.rootDir, "..", "escaped.pdf"))).toBe(false);
+  // The escape target is unique per run and removed afterwards. A fixed name
+  // outside the upload root is shared state: one run where the guard is broken
+  // (or a stray file from anything else on the machine) leaves a file behind
+  // that makes every later run fail for a reason unrelated to the code under
+  // test. This suite must only ever see its own leftovers.
+  const ESCAPED = `escaped-${process.pid}-${Date.now()}.pdf`;
+  const escapeTarget = path.resolve(localStorage.rootDir, "..", ESCAPED);
+  const outsideRoot = () => fs.existsSync(escapeTarget);
+
+  afterAll(() => fs.rmSync(escapeTarget, { force: true }));
+
+  test.each([`../${ESCAPED}`, `cv/../../${ESCAPED}`, "/etc/passwd", "cv/x\u0000.pdf", ""])(
+    "rejects the key %j",
+    async (key) => {
+      await expect(localStorage.save(key, PDF)).rejects.toMatchObject({ statusCode: 404 });
+      await expect(localStorage.read(key)).rejects.toMatchObject({ statusCode: 404 });
+      expect(await localStorage.exists(key)).toBe(false);
+      expect(outsideRoot()).toBe(false);
+    }
+  );
+
+  // A backslash separates directories on Windows and is an ordinary filename
+  // character on Linux, so the platform decides whether these are traversal
+  // attempts or just oddly named files — asserting "rejected" would pass on
+  // one platform and fail on the other (the suite runs on both: developers on
+  // Windows, CI on Ubuntu). The property that has to hold everywhere is the
+  // one that matters: nothing is written outside the upload root.
+  test.each([`cv/..\\..\\${ESCAPED}`, "C:\\Windows\\win.ini"])("never escapes the root with %j", async (key) => {
+    const stored = await localStorage.save(key, PDF).then(
+      () => true,
+      (err) => {
+        expect(err.statusCode).toBe(404);
+        return false;
+      }
+    );
+
+    expect(outsideRoot()).toBe(false);
+    // If the driver did store it, it resolved inside the root — that is what
+    // exists() proves, since it re-runs the containment check.
+    expect(await localStorage.exists(key)).toBe(stored);
+    if (stored) await localStorage.remove(key);
   });
 
   test("a URL-encoded traversal stays a literal name inside the root", async () => {
     // Nothing decodes keys, so this is just an oddly named file — and it still
     // lands under the upload root.
-    await localStorage.save("cv/%2e%2e%2fescaped.pdf", PDF);
-    expect(fs.existsSync(path.resolve(localStorage.rootDir, "..", "escaped.pdf"))).toBe(false);
-    await localStorage.remove("cv/%2e%2e%2fescaped.pdf");
+    const key = `cv/%2e%2e%2f${ESCAPED}`;
+    await localStorage.save(key, PDF);
+    expect(outsideRoot()).toBe(false);
+    expect(await localStorage.exists(key)).toBe(true);
+    await localStorage.remove(key);
   });
 });
 
@@ -358,5 +394,44 @@ describe("contact submission images", () => {
     const created = await submit(false);
     const admin = await createAdmin();
     expect((await request(app).get(`/api/v1/contact/${created.body.data._id}/image`).set(as(admin))).status).toBe(404);
+  });
+});
+
+// Concurrency is where a read-then-write implementation of any of these would
+// show itself. What has to hold is not "one request wins" but that the state
+// left behind is usable: metadata that points at a file that exists, one
+// profile per owner, one session generation.
+describe("concurrent writes leave consistent state", () => {
+  test("simultaneous CV uploads leave metadata that points at a file that exists", async () => {
+    const owner = await registerUser({ role: "candidate" });
+
+    const results = await Promise.all([attachCv(owner), attachCv(owner), attachCv(owner)]);
+    expect(results.every((r) => r.status === 200)).toBe(true);
+
+    const stored = (await User.findById(owner.user._id)).cv;
+    expect(stored).toBeTruthy();
+    // The row is the source of truth, and whatever it points at must be
+    // readable — a losing writer must never delete the winner's file.
+    expect(await storage.exists(stored.key)).toBe(true);
+
+    const res = await download(owner);
+    expect(res.status).toBe(200);
+    expect(res.body.equals(PDF)).toBe(true);
+  });
+
+  test("a replace racing a delete ends with either a readable CV or none at all", async () => {
+    const owner = await registerUser({ role: "candidate" });
+    await uploadCv(owner);
+
+    await Promise.all([attachCv(owner), request(app).delete("/api/v1/users/me/cv").set(as(owner))]);
+
+    const stored = (await User.findById(owner.user._id)).cv;
+    const res = await download(owner);
+    if (stored) {
+      expect(await storage.exists(stored.key)).toBe(true);
+      expect(res.status).toBe(200);
+    } else {
+      expect(res.status).toBe(404);
+    }
   });
 });

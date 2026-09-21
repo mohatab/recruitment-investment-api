@@ -144,3 +144,40 @@ describe("reset-password", () => {
     expect(JSON.stringify(await AuthToken.find().lean())).not.toContain(token);
   });
 });
+
+// A reset link is a bearer credential with a one-hour life: what matters is
+// what it is still worth after the account's standing changes underneath it.
+describe("a reset link follows the account, not the other way round", () => {
+  test("a link issued before deactivation is refused afterwards, and the password is unchanged", async () => {
+    const { user } = await registerUser({ password: "original-password" });
+    const token = await requestResetToken(user.email);
+
+    await User.updateOne({ _id: user._id }, { isActive: false });
+
+    const res = await reset(token, "attacker-chosen-password");
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("INVALID_TOKEN");
+
+    // Neither password works while the account is disabled, but the stored
+    // hash must still be the original one: reactivation must not hand the
+    // account to whoever held the link.
+    await User.updateOne({ _id: user._id }, { isActive: true });
+    expect((await login(user.email, "attacker-chosen-password")).status).toBe(401);
+    expect((await login(user.email, "original-password")).status).toBe(200);
+  });
+
+  test("the token is not consumed on the way to that refusal, so it still fails after reactivation", async () => {
+    const { user } = await registerUser({ password: "original-password" });
+    const token = await requestResetToken(user.email);
+    await User.updateOne({ _id: user._id }, { isActive: false });
+
+    expect((await reset(token, "first-try")).status).toBe(400);
+    await User.updateOne({ _id: user._id }, { isActive: true });
+
+    // Whether the claim was spent or not, one thing has to hold: a link that
+    // was already refused can never later set a password.
+    const second = await reset(token, "second-try");
+    expect(second.status).toBe(400);
+    expect((await login(user.email, "original-password")).status).toBe(200);
+  });
+});

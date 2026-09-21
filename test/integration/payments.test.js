@@ -525,6 +525,11 @@ describe("disputes", () => {
 });
 
 describe("database constraints", () => {
+  // Mongoose builds indexes in the background on first use, so a test that
+  // asserts on them has to wait for that build rather than rely on an earlier
+  // test having triggered it — otherwise it passes or fails by test order.
+  beforeEach(() => StripeEvent.init());
+
   test("the processed-event log is unique on eventId and has its lookup indexes", async () => {
     await StripeEvent.create({ eventId: "evt_dup", type: "payment_intent.succeeded" });
     await expect(StripeEvent.create({ eventId: "evt_dup", type: "payment_intent.succeeded" })).rejects.toMatchObject({

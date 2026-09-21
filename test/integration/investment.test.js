@@ -165,3 +165,50 @@ describe("profile upserts report creation from the write itself", () => {
     expect(second.body.data.criteria.industries).toEqual(["fintech"]);
   });
 });
+
+describe("concurrent profile upserts", () => {
+  test("simultaneous first saves create exactly one startup profile", async () => {
+    const owner = await registerUser({ role: "startup" });
+    const put = () =>
+      request(app)
+        .put("/api/v1/startups/me")
+        .set({ Authorization: `Bearer ${owner.accessToken}` })
+        .send(validStartup);
+
+    const results = await Promise.all([put(), put(), put()]);
+    // The owner index is unique, so a losing writer must surface as a
+    // controlled response, never as a second profile or a 500.
+    expect(results.every((r) => [200, 201, 409].includes(r.status))).toBe(true);
+
+    const Startup = require("../../src/modules/investment/startups/startup.model");
+    expect(await Startup.countDocuments({ owner: owner.user._id })).toBe(1);
+
+    const mine = await request(app)
+      .get("/api/v1/startups/me")
+      .set({ Authorization: `Bearer ${owner.accessToken}` });
+    expect(mine.status).toBe(200);
+    expect(mine.body.data.name).toBe(validStartup.name);
+  });
+
+  // The concurrency test above can only ever observe the race it happens to
+  // hit. What makes "one profile per account" true regardless is the unique
+  // index, so that is asserted directly: a second document for the same owner
+  // is refused by the database, not by the service that usually gets there
+  // first.
+  test.each([
+    [
+      "Startup",
+      "../../src/modules/investment/startups/startup.model",
+      { name: "Second", description: "d", totalRaisingCents: 100000, minInvestmentCents: 1000 },
+    ],
+    ["Investor", "../../src/modules/investment/investors/investor.model", {}],
+  ])("a second %s profile for one owner is refused by the database", async (_, modulePath, fields) => {
+    const Model = require(modulePath);
+    await Model.init(); // the unique index is the thing under test
+    const owner = new (require("mongoose").Types.ObjectId)();
+
+    await Model.create({ owner, ...fields });
+    await expect(Model.create({ owner, ...fields })).rejects.toMatchObject({ code: 11000 });
+    expect(await Model.countDocuments({ owner })).toBe(1);
+  });
+});

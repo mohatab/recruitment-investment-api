@@ -414,6 +414,7 @@ describe("database constraints", () => {
       coverLetter: COVER_LETTER,
       resumeUrl: RESUME,
     });
+    await Application.init(); // the unique index is the thing under test
     await expect(
       Application.create({ job: job._id, applicant: candidate.user._id, coverLetter: COVER_LETTER, resumeUrl: RESUME })
     ).rejects.toMatchObject({ code: 11000 });
@@ -426,6 +427,7 @@ describe("database constraints", () => {
   });
 
   test("the indexes the list endpoints rely on exist", async () => {
+    await Promise.all([Job.init(), Application.init()]); // wait for the background index build
     const jobIndexes = (await Job.collection.indexes()).map((i) => JSON.stringify(i.key));
     expect(jobIndexes).toEqual(
       expect.arrayContaining([

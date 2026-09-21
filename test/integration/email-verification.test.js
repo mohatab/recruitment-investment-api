@@ -49,6 +49,21 @@ describe("email verification", () => {
     expect(again.body.error.code).toBe("INVALID_TOKEN");
   });
 
+  // The claim is one conditional update, so concurrency is the case that would
+  // expose a read-then-write implementation.
+  test("concurrent use of one verification token succeeds at most once", async () => {
+    const { user, accessToken } = await registerUser({}, { verified: false });
+    const token = tokenFrom(verificationEmails(user.email)[0]);
+
+    const results = await Promise.all(Array.from({ length: 5 }, () => verify(token)));
+    const accepted = results.filter((r) => r.status === 200);
+    expect(accepted).toHaveLength(1);
+    expect(results.filter((r) => r.body.error?.code === "INVALID_TOKEN")).toHaveLength(4);
+
+    expect((await me(accessToken)).body.data.emailVerified).toBe(true);
+    expect(await AuthToken.countDocuments({ user: user._id, purpose: "email_verification", usedAt: null })).toBe(0);
+  });
+
   test("an expired verification token is rejected", async () => {
     const { user, accessToken } = await registerUser({}, { verified: false });
     await AuthToken.updateMany({}, { expiresAt: new Date(Date.now() - 1000) });
