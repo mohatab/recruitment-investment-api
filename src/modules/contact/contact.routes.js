@@ -53,6 +53,7 @@ router.post("/", uploadLimiter, uploadImage.single("profileImage"), validate(sch
  *       - $ref: '#/components/parameters/Sort'
  *     responses:
  *       200: { $ref: '#/components/responses/ContactListResponse' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       403: { $ref: '#/components/responses/Forbidden' }
  */

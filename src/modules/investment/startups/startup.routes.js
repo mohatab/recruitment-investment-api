@@ -26,6 +26,7 @@ const router = express.Router();
  *         schema: { type: string }
  *     responses:
  *       200: { $ref: '#/components/responses/StartupListResponse' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  */
 router.get("/", validate(schemas.list, "query"), controller.list);
 
@@ -43,6 +44,7 @@ router.get("/", validate(schemas.list, "query"), controller.list);
  *           schema: { $ref: '#/components/schemas/SuccessAssessmentInput' }
  *     responses:
  *       200: { $ref: '#/components/responses/SuccessAssessmentResponse' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  */
 router.post("/success-assessment", validate(schemas.successAssessment), controller.successAssessment);
 
@@ -60,6 +62,7 @@ router.post("/success-assessment", validate(schemas.successAssessment), controll
  *     x-required-roles: [investor]
  *     responses:
  *       200: { $ref: '#/components/responses/StartupListResponse' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       403: { $ref: '#/components/responses/Forbidden' }
  *       404: { $ref: '#/components/responses/NotFound' }

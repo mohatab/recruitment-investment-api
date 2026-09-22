@@ -19,6 +19,7 @@ router.use(authenticate);
  *       content: { application/json: { schema: { $ref: '#/components/schemas/ExperienceInput' } } }
  *     responses:
  *       201: { $ref: '#/components/responses/ExperienceResponse' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.post("/", validate(schemas.create), controller.create);
@@ -36,6 +37,7 @@ router.post("/", validate(schemas.create), controller.create);
  *       - $ref: '#/components/parameters/Sort'
  *     responses:
  *       200: { $ref: '#/components/responses/ExperienceListResponse' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  */
 router.get("/", validate(schemas.list, "query"), controller.listMine);

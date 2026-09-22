@@ -27,6 +27,7 @@ router.use(authenticate);
  *     x-required-roles: [candidate]
  *     responses:
  *       200: { $ref: '#/components/responses/ApplicationListResponse' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       403: { $ref: '#/components/responses/Forbidden' }
  */

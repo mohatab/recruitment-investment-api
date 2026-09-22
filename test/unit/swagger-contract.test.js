@@ -5,6 +5,7 @@
 const SwaggerParser = require("@apidevtools/swagger-parser");
 const swaggerSpec = require("../../src/docs/swagger");
 const { collectRoutes } = require("../routes");
+const CODES = require("../../src/common/errors/errorCodes");
 
 const routes = collectRoutes();
 const operation = (r) => swaggerSpec.paths?.[r.openapiPath]?.[r.method.toLowerCase()];
@@ -156,4 +157,131 @@ describe("Swagger contract", () => {
     })(swaggerSpec);
     expect(broken).toEqual([]);
   });
+});
+
+// --- Request bodies -------------------------------------------------------
+// The spec is generated from JSDoc next to each route, so nothing stops a
+// body schema from drifting away from the Joi schema that actually guards the
+// endpoint. These compare the two directly: PATCH /jobs/{id} documented no
+// body at all while accepting fifteen fields, and StartupInput marked
+// pre-Task-7 field names (`totalRaising`, `minInvestment`) as required —
+// names its own properties no longer contained, so a generated client would
+// have sent fields the API rejects.
+describe("request bodies match what the endpoint validates", () => {
+  const bodyRoutes = routes.filter((r) => r.bodyKeys);
+
+  const documentedBody = (route) => {
+    const content = operation(route).requestBody?.content;
+    if (!content) return null;
+    const media = Object.keys(content)[0];
+    return { media, schema: resolve(content[media].schema) ?? {} };
+  };
+
+  test("every route that validates a body documents one", () => {
+    expect(bodyRoutes.length).toBeGreaterThan(5);
+    const undocumented = bodyRoutes.filter((r) => !documentedBody(r));
+    expect(undocumented.map(label)).toEqual([]);
+  });
+
+  test("the documented properties are exactly the fields a client may send", () => {
+    const wrong = [];
+    for (const route of bodyRoutes) {
+      const doc = documentedBody(route);
+      if (!doc || doc.media !== "application/json") continue; // multipart is checked below
+      const documented = Object.keys(doc.schema.properties || {}).sort();
+      const accepted = [...route.bodyKeys].sort();
+      if (JSON.stringify(documented) !== JSON.stringify(accepted)) {
+        wrong.push(`${label(route)} (documents ${documented}; accepts ${accepted})`);
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+
+  test("the documented required fields are exactly the ones Joi insists on", () => {
+    const wrong = [];
+    for (const route of bodyRoutes) {
+      const doc = documentedBody(route);
+      if (!doc || doc.media !== "application/json") continue;
+      const documented = (doc.schema.required || []).slice().sort();
+      const required = [...route.requiredBodyKeys].sort();
+      if (JSON.stringify(documented) !== JSON.stringify(required)) {
+        wrong.push(`${label(route)} (documents ${documented}; requires ${required})`);
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+});
+
+// A schema that requires a property it does not define is incoherent on its
+// own terms: Swagger UI marks a field required that the schema never lists,
+// and a code generator emits a client the API rejects.
+test("no schema requires a property it does not define", () => {
+  const broken = Object.entries(swaggerSpec.components.schemas)
+    .map(([name, schema]) => {
+      const properties = Object.keys(schema.properties || {});
+      const missing = (schema.required || []).filter((field) => !properties.includes(field));
+      return missing.length ? `${name} requires ${missing} but defines ${properties}` : null;
+    })
+    .filter(Boolean);
+  expect(broken).toEqual([]);
+});
+
+// --- Error responses ------------------------------------------------------
+describe("documented failures match the ones the route can actually produce", () => {
+  test("every route that validates input documents 400", () => {
+    const validating = routes.filter((r) => r.bodyKeys || r.queryKeys);
+    expect(validating.length).toBeGreaterThan(10);
+    const missing = validating.filter((r) => !operation(r).responses?.["400"]);
+    expect(missing.map(label)).toEqual([]);
+  });
+
+  test("every rate-limited route documents 429", () => {
+    const limited = routes.filter((r) => r.rateLimit);
+    expect(limited.length).toBeGreaterThan(5);
+    expect(limited.filter((r) => !operation(r).responses?.["429"]).map(label)).toEqual([]);
+  });
+
+  // A summary that names a status it does not document sends a reader looking
+  // for a response definition that is not there.
+  test("a status named in a summary is also documented", () => {
+    const wrong = [];
+    for (const route of routes) {
+      const op = operation(route);
+      for (const [, status] of (op.summary || "").matchAll(/\b([45]\d\d)\b/g)) {
+        if (!op.responses?.[status]) wrong.push(`${label(route)} mentions ${status}`);
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+
+  test("every documented error code is one the application can emit", () => {
+    const defined = new Set(Object.values(CODES));
+    const documented = new Set();
+    JSON.stringify(swaggerSpec).replace(/"([A-Z][A-Z_]{3,})"/g, (_, code) => documented.add(code));
+    const invented = [...documented].filter((code) => !defined.has(code) && /_/.test(code));
+    expect(invented).toEqual([]);
+  });
+});
+
+// --- Response payloads ----------------------------------------------------
+// Documentation is also an attack surface: a field named here is a field a
+// reader expects to receive, and these are the ones that must never appear.
+test("no response schema documents a secret or an internal identifier", () => {
+  const forbidden = ["password", "tokenHash", "tokenVersion", "storageKey", "usedAt", "__v"];
+  const offenders = [];
+  for (const [name, schema] of Object.entries(swaggerSpec.components.schemas)) {
+    const walkProps = (properties, trail) => {
+      for (const [property, value] of Object.entries(properties || {})) {
+        if (forbidden.includes(property)) offenders.push(`${trail}.${property}`);
+        // The storage key of an uploaded file is internal: clients get a
+        // downloadPath instead (Task 9).
+        if (property === "key" && /cv|image/i.test(trail)) offenders.push(`${trail}.key`);
+        if (value?.properties) walkProps(value.properties, `${trail}.${property}`);
+      }
+    };
+    // Request bodies legitimately carry a password; responses never do.
+    if (/Input$/.test(name)) continue;
+    walkProps(schema.properties, name);
+  }
+  expect(offenders).toEqual([]);
 });

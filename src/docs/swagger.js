@@ -7,6 +7,26 @@ const { STAGES } = require("../modules/investment/startups/startup.model");
 const { DEFAULT_LIMIT, MAX_LIMIT } = require("../common/utils/pagination");
 
 const id = (description) => ({ type: "string", description, example: "507f1f77bcf86cd799439011" });
+// The writable fields of a job posting. `JobInput` requires a subset of these
+// on create; `JobUpdateInput` takes any of them on a partial update, so they
+// are declared once rather than drifting apart.
+const jobFields = {
+  title: { type: "string" },
+  role: { type: "string" },
+  description: { type: "string" },
+  responsibilities: { type: "string" },
+  minSalary: { type: "number", minimum: 0 },
+  maxSalary: { type: "number", minimum: 0, description: "Must be greater than or equal to minSalary" },
+  salaryType: { type: "string", enum: ["hourly", "monthly", "yearly"] },
+  applyMethod: { type: "string", enum: ["platform", "external"], default: "platform" },
+  applyLink: { type: "string", format: "uri" },
+  applyEmail: { type: "string", format: "email" },
+  tags: { type: "array", items: { type: "string" } },
+  vacancies: { type: "integer", minimum: 1, default: 1 },
+  location: { type: "string" },
+  expirationDate: { type: "string", format: "date-time", description: "Must be in the future" },
+};
+
 const timestamps = {
   createdAt: { type: "string", format: "date-time" },
   updatedAt: { type: "string", format: "date-time" },
@@ -496,26 +516,21 @@ const options = {
             "salaryType",
             "expirationDate",
           ],
+          properties: jobFields,
+        },
+        JobUpdateInput: {
+          type: "object",
+          minProperties: 1,
+          description:
+            "A partial update: every field is optional, but at least one must be sent. The *merged* document is validated, so `minSalary` must stay <= `maxSalary`, an `external` applyMethod must keep an applyLink or applyEmail, and reopening a closed posting needs a future `expirationDate`. `recruiter` is server-controlled and ignored if sent.",
           properties: {
-            title: { type: "string" },
-            role: { type: "string" },
-            description: { type: "string" },
-            responsibilities: { type: "string" },
-            minSalary: { type: "number", minimum: 0 },
-            maxSalary: { type: "number", minimum: 0, description: "Must be greater than or equal to minSalary" },
-            salaryType: { type: "string", enum: ["hourly", "monthly", "yearly"] },
-            applyMethod: { type: "string", enum: ["platform", "external"], default: "platform" },
-            applyLink: { type: "string", format: "uri" },
-            applyEmail: { type: "string", format: "email" },
-            tags: { type: "array", items: { type: "string" } },
-            vacancies: { type: "integer", minimum: 1, default: 1 },
-            location: { type: "string" },
-            expirationDate: { type: "string", format: "date-time", description: "Must be in the future" },
+            ...jobFields,
+            status: { type: "string", enum: ["open", "closed"] },
           },
         },
         StartupInput: {
           type: "object",
-          required: ["name", "description", "totalRaising", "minInvestment"],
+          required: ["name", "description", "totalRaisingCents", "minInvestmentCents"],
           description: "`owner` and `raisedSoFar` are server-controlled and ignored if sent.",
           properties: {
             name: { type: "string" },

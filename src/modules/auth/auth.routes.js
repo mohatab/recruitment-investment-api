@@ -42,6 +42,7 @@ router.post("/register", validate(schemas.register), controller.register);
  *           schema: { $ref: '#/components/schemas/LoginInput' }
  *     responses:
  *       200: { $ref: '#/components/responses/AuthSessionResponse' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       403: { $ref: '#/components/responses/Forbidden' }
  *       429: { $ref: '#/components/responses/TooManyRequests' }

@@ -67,6 +67,7 @@ router.patch("/:id/read", controller.markRead);
  *           schema: { type: object, required: [message], properties: { message: { type: string }, userId: { type: string }, targetRole: { type: string } } }
  *     responses:
  *       201: { $ref: '#/components/responses/NotificationResponse' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       403: { $ref: '#/components/responses/Forbidden' }
  *       404: { $ref: '#/components/responses/NotFound' }

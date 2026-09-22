@@ -34,6 +34,13 @@ function acceptedKeys(schema) {
     .map(([key]) => key);
 }
 
+function requiredKeys(schema) {
+  const described = schema.describe();
+  return Object.entries(described.keys || {})
+    .filter(([, value]) => value.flags?.presence === "required")
+    .map(([key]) => key);
+}
+
 function walk(router, prefix, inherited, out) {
   const middleware = [...inherited];
   for (const layer of router.stack) {
@@ -43,6 +50,7 @@ function walk(router, prefix, inherited, out) {
       for (const method of Object.keys(layer.route.methods)) {
         const gate = chain.find((fn) => fn.name === "authorizeRoles");
         const queryValidator = chain.find((fn) => fn.name === "validateRequest" && fn.property === "query");
+        const bodyValidator = chain.find((fn) => fn.name === "validateRequest" && fn.property === "body");
         out.push({
           method: method.toUpperCase(),
           path,
@@ -53,6 +61,10 @@ function walk(router, prefix, inherited, out) {
           // The query keys this route really accepts (a forbidden key is not
           // accepted), or null when it validates no query at all.
           queryKeys: queryValidator ? acceptedKeys(queryValidator.schema) : null,
+          // Likewise for the request body: the keys a client may send, and
+          // which of them the schema insists on.
+          bodyKeys: bodyValidator ? acceptedKeys(bodyValidator.schema) : null,
+          requiredBodyKeys: bodyValidator ? requiredKeys(bodyValidator.schema) : null,
           // The strictest rate-limit policy guarding this route, if any.
           rateLimit: chain
             .filter((fn) => fn.limitPolicy)

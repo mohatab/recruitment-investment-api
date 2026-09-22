@@ -30,6 +30,7 @@ router.use(authenticate);
  *           schema: { type: object, required: [coverLetter], properties: { coverLetter: { type: string, minLength: 10 }, resumeUrl: { type: string } } }
  *     responses:
  *       201: { $ref: '#/components/responses/ApplicationResponse' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       403: { $ref: '#/components/responses/Forbidden' }
  *       404: { $ref: '#/components/responses/NotFound' }
@@ -59,6 +60,7 @@ router.post("/", authorize(ROLES.CANDIDATE), validate(schemas.create), controlle
  *         schema: { type: string }
  *     responses:
  *       200: { $ref: '#/components/responses/ApplicationListResponse' }
+ *       400: { $ref: '#/components/responses/ValidationError' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       403: { $ref: '#/components/responses/Forbidden' }
  *       404: { $ref: '#/components/responses/NotFound' }
