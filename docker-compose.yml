@@ -3,9 +3,20 @@ services:
     build: .
     ports:
       - "3000:3000"
-    # The process never needs to gain privileges it did not start with.
+    # Come back after a daemon restart or a crash, but stay down when a human
+    # stops the stack on purpose.
+    restart: unless-stopped
+    # server.js drains connections and gives up after 10s; Docker's default
+    # SIGKILL deadline is also 10s, which would race that timer. Five seconds
+    # of headroom means the graceful path always finishes first.
+    stop_grace_period: 15s
+    # The process never needs to gain privileges it did not start with, and it
+    # writes only to the uploads volume — everything else can be immutable.
     security_opt:
       - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
     environment:
       # development by default so `docker compose up` works without Stripe/SMTP;
       # production additionally requires CORS_ORIGIN, Stripe and SMTP (see .env.example).
@@ -44,6 +55,7 @@ services:
     # by service name, and a developer who needs a shell uses
     # `docker compose exec mongo mongosh`. A real deployment runs an
     # authenticated, network-isolated database (see docs/SECURITY.md).
+    restart: unless-stopped
     volumes:
       - mongo-data:/data/db
     security_opt:

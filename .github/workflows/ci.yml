@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [master, main]
 
+# Least privilege: this workflow only reads the repository. It publishes
+# nothing, so the default token needs no write scope.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Lint, test, audit
@@ -19,8 +24,20 @@ jobs:
           node-version: 20
           cache: npm
 
+      # `npm ci` (not `npm install`) so the lockfile is authoritative: it fails
+      # outright if package.json and package-lock.json have drifted apart.
       - name: Install dependencies
         run: npm ci
+
+      # The integration suite runs a real mongod via mongodb-memory-server,
+      # which downloads that binary on first use. `cache: npm` above only
+      # covers the npm cache, so without this the download happens on every
+      # run and can outlast the first suite's hook timeout on a cold runner.
+      - name: Cache the in-memory MongoDB binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-binaries-${{ runner.os }}
 
       - name: Lint
         run: npm run lint
@@ -28,15 +45,38 @@ jobs:
       - name: Format check
         run: npm run format:check
 
+      # The suite carries the OpenAPI checks with it: swagger-contract.test.js
+      # validates the generated document against the OpenAPI 3 schema and
+      # against the real routers, so an invalid or drifted spec fails here
+      # rather than needing a separate job.
       - name: Run tests with coverage
         run: npm run test:coverage
-        env:
-          JWT_ACCESS_SECRET: ci-test-access-secret
-          JWT_REFRESH_SECRET: ci-test-refresh-secret
 
-      - name: Dependency audit (fails only on high/critical)
+      # High and critical advisories fail the build. Moderates are reported but
+      # do not block, because a transitive moderate with no upstream fix would
+      # otherwise leave the pipeline permanently red.
+      - name: Dependency audit
         run: npm audit --audit-level=high
-        continue-on-error: true
 
       - name: Docker build
         run: docker build -t recruitment-investment-api:ci .
+
+      # Building an image proves it compiles, not that it can start. Loading
+      # the app exercises env validation and every require in the tree, so a
+      # missing runtime file or a production-only dependency mistake fails the
+      # build instead of the deploy. No database is needed to load it.
+      - name: Image starts and validates its configuration
+        run: |
+          docker run --rm \
+            -e NODE_ENV=production \
+            -e MONGODB_URI=mongodb://localhost:27017/ci \
+            -e JWT_ACCESS_SECRET=ci-access-secret-0123456789abcdef \
+            -e JWT_REFRESH_SECRET=ci-refresh-secret-0123456789abcd \
+            -e CORS_ORIGIN=https://app.example.com \
+            -e APP_URL=https://app.example.com \
+            -e STRIPE_SECRET_KEY=sk_test_ci \
+            -e STRIPE_WEBHOOK_SECRET=whsec_ci \
+            -e SMTP_USER=ci \
+            -e SMTP_PASS=ci \
+            recruitment-investment-api:ci \
+            node -e "require('./src/app'); console.log('application loaded under NODE_ENV=production')"

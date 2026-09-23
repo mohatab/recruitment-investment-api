@@ -383,11 +383,24 @@ cp .env.example .env   # set JWT_ACCESS_SECRET / JWT_REFRESH_SECRET at minimum
 docker compose up --build
 ```
 
-Starts the API (port 3000) and MongoDB (port 27017), with a container
-`HEALTHCHECK` hitting `/health` (liveness). Compose defaults to
-`NODE_ENV=development` so it starts without Stripe/SMTP credentials; set
-`NODE_ENV=production` in `.env` together with the production-required
-variables above.
+Starts the API on port 3000 and MongoDB on the compose network only —
+**the database port is deliberately not published to the host**, because the
+container runs without authentication (see
+[SECURITY.md](./docs/SECURITY.md#deployment-requirements-not-enforceable-by-the-code)).
+Reach it with `docker compose exec mongo mongosh`.
+
+The API image carries a `HEALTHCHECK` against `/health` (liveness only, so a
+database outage never restarts a healthy process); `/health/ready` is the one
+that reports 503 when MongoDB is unreachable, and is what a load balancer
+should gate traffic on. Both services use `restart: unless-stopped`, and the
+API container runs read-only apart from the `uploads` volume and a tmpfs
+`/tmp`, as a non-root user. `docker compose stop` sends SIGTERM; the process
+drains connections, closes MongoDB and exits on its own, with a 15s grace
+period before Docker would force it.
+
+Compose defaults to `NODE_ENV=development` so it starts without Stripe/SMTP
+credentials; set `NODE_ENV=production` in `.env` together with the
+production-required variables above, which startup validation enforces.
 
 ## Testing
 
