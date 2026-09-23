@@ -1,5 +1,13 @@
 # AUDIT.md — Recruitment & Investment Platform API
 
+> **Historical record.** This describes the repository as it stood on
+> 2026-09-08, _before_ the rebuild — three glued-together mini-APIs, a
+> hardcoded JWT secret, publicly readable CVs and the rest. It is kept as the
+> before-state the rebuild was measured against, and is deliberately not
+> updated. Nothing here describes the current system: for that, start at
+> [README.md](./README.md), [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) and
+> [docs/SECURITY.md](./docs/SECURITY.md).
+
 Audit date: 2026-09-08. Based on a full read of every route, model, middleware,
 config, test, and workflow file in the repository (no file skipped).
 

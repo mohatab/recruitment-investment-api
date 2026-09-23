@@ -1,5 +1,14 @@
 # Project Audit — Recruitment & Investment API
 
+> **Historical record.** A point-in-time audit of the pre-rebuild codebase
+> (2026-09-17, HEAD `ea636a6`). Every defect listed here has since been fixed or
+> explicitly accepted; the findings are kept as the baseline the work was
+> measured against and are deliberately not updated. Field names, routes and
+> behaviour described below are the _old_ ones — `cvUrl`, `raisedSoFar`, a
+> public `/uploads/*` and so on. The current system is documented in
+> [README.md](../README.md), [ARCHITECTURE.md](./ARCHITECTURE.md),
+> [SECURITY.md](./SECURITY.md) and [DATABASE.md](./DATABASE.md).
+
 |            |                                                                                                                                                                                                                                                                                                                                                                          |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Audit date | 2026-09-17                                                                                                                                                                                                                                                                                                                                                               |

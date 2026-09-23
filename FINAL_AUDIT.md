@@ -1,5 +1,13 @@
 # FINAL_AUDIT.md — Production-readiness rebuild report
 
+> **Historical record.** This is the report from the _first_ rebuild pass, when
+> the suite stood at 43 tests across 11 suites. The project has moved well
+> beyond it since (677 tests across 36 suites at the time of writing), so the
+> figures, setup commands and Docker notes below are a snapshot, not current
+> instructions — `docker compose up` no longer publishes the database port, for
+> one. For how to run the project today see [README.md](./README.md) and
+> [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md).
+
 Companion to `AUDIT.md` (the before-state). This is the after-state: what
 changed, why, and how it was verified.
 

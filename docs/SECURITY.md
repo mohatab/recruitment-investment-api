@@ -78,7 +78,7 @@ Admin is **not** a superuser: admin can do only the operations listed below.
 | Apply to a job                          | candidate                    | `applicant` = caller; status always starts at `submitted`                                                       |
 | Applications of a job / change status   | recruiter                    | owner of the job only (a deleted job owns nothing)                                                              |
 | `GET /applications/mine`                | candidate                    | caller's applications only                                                                                      |
-| Startup profile `/startups/me`          | startup                      | one profile, `owner` = caller; `raisedSoFar` not writable                                                       |
+| Startup profile `/startups/me`          | startup                      | one profile, `owner` = caller; `raisedSoFarCents` not writable                                                  |
 | Investor profile `/investors/me`        | investor                     | `owner` = caller                                                                                                |
 | `GET /investors/:id`                    | any authenticated            | public projection: **criteria are private** to the owner                                                        |
 | `GET /startups/matches`                 | investor                     | against the caller's own criteria                                                                               |
@@ -166,7 +166,7 @@ Admin is **not** a superuser: admin can do only the operations listed below.
 - **Joi validation on every write endpoint**, via one shared `validate()`
   middleware (`common/middleware/validate.js`) with `stripUnknown: true` —
   this is what prevents mass assignment: a client can't set `role`,
-  `owner`, `raisedSoFar`, etc. through a body field the schema doesn't
+  `owner`, `raisedSoFarCents`, etc. through a body field the schema doesn't
   declare, because unknown fields are dropped before the value ever
   reaches a service function.
 - **NoSQL injection**: `express-mongo-sanitize` strips `$`/`.`-prefixed
@@ -358,10 +358,12 @@ maintenance item rather than a vulnerability.
 
 - **The database must require authentication and must not be reachable from
   the internet.** The `mongo` service in `docker-compose.yml` runs without
-  credentials because it is a development convenience; its port is published
-  on `127.0.0.1` only, so `docker compose up` cannot put an open database on
-  the host's network. A real deployment uses a managed or credentialed
-  MongoDB, reachable only from the API's network.
+  credentials because it is a development convenience, so its port is not
+  published to the host at all: the API reaches it over the Compose network by
+  service name, and a developer who needs a shell uses
+  `docker compose exec mongo mongosh`. `docker compose up` therefore cannot put
+  an open database on the host's network. A real deployment uses a managed or
+  credentialed MongoDB, reachable only from the API's network.
 - **`TRUST_PROXY` must match the actual topology.** It is off by default; turn
   it on only behind a proxy that overwrites `X-Forwarded-For`, otherwise
   clients can spoof their IP and walk past every rate limiter.

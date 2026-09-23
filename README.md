@@ -15,12 +15,18 @@ refresh-token rotation, role-based authorization, real-time notifications
 and messaging over Socket.IO, and Swagger/OpenAPI docs generated from the
 route annotations.
 
-**Further reading:** [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) (request
-lifecycle, auth/payment/webhook/real-time flows, error handling) ·
-[`docs/DATABASE.md`](./docs/DATABASE.md) (collections, relationships, indexes,
-and why) · [`AUDIT.md`](./AUDIT.md) / [`FINAL_AUDIT.md`](./FINAL_AUDIT.md)
-(before/after) · [`PORTFOLIO_REVIEW.md`](./PORTFOLIO_REVIEW.md) (engineering
-highlights, limitations, interview talking points).
+### Documentation map
+
+| Document                                                                                                             | What it covers                                                                                                                   |
+| -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)                                                                     | Request lifecycle, the auth/payment/webhook/realtime flows, file storage, the Socket.IO event contract, error handling           |
+| [`docs/API.md`](./docs/API.md)                                                                                       | Endpoint index by domain, with the conventions every endpoint follows; the interactive reference is Swagger at `/api-docs`       |
+| [`docs/SECURITY.md`](./docs/SECURITY.md)                                                                             | Authentication, authorization, upload and payment controls, headers, logging boundaries, deployment requirements, accepted risks |
+| [`docs/DATABASE.md`](./docs/DATABASE.md)                                                                             | Collections, relationships, indexes and the query plans that justify them                                                        |
+| [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)                                                                         | Building, configuring and operating the container; health, shutdown, volumes, backups, what production still needs               |
+| [`docs/MIGRATIONS.md`](./docs/MIGRATIONS.md)                                                                         | Breaking changes from the rebuild and the migration scripts for an existing database                                             |
+| [`docs/API_ENDPOINT_INVENTORY.md`](./docs/API_ENDPOINT_INVENTORY.md)                                                 | Every route with its authorization rule and the test that covers it                                                              |
+| [`AUDIT.md`](./AUDIT.md) · [`FINAL_AUDIT.md`](./FINAL_AUDIT.md) · [`docs/PROJECT_AUDIT.md`](./docs/PROJECT_AUDIT.md) | Historical records of the pre-rebuild codebase — kept as the baseline, deliberately not updated                                  |
 
 ## Problem statement / origin
 
@@ -267,7 +273,7 @@ POST /api/v1/investments  { startupId, amountCents }   # -> { investment, client
 ```
 
 The client confirms payment with Stripe.js using `clientSecret`. The
-investment is only marked `paid` — and the startup's `raisedSoFar`
+investment is only marked `paid` — and the startup's `raisedSoFarCents`
 incremented — when Stripe's **signed** webhook confirms it
 (`POST /api/v1/payments/webhook`), never from a client-reported "success".
 
@@ -405,18 +411,44 @@ production-required variables above, which startup validation enforces.
 ## Testing
 
 ```bash
-npm test              # unit + integration, against an in-memory MongoDB
-npm run test:coverage # same, with coverage report
+npm test               # 677 tests, 36 suites, against an in-memory MongoDB
+npm run test:coverage  # same, with a coverage report
+npm run lint
+npm run format:check
+npm audit --audit-level=high
 ```
 
-Integration tests spin up `mongodb-memory-server` (no external database
-needed) and exercise real request/response cycles with Supertest, covering:
-registration/login/refresh/logout, role-based authorization boundaries,
-job/application CRUD and the status state machine, duplicate-application
-prevention, startup/investor profiles and matching, notification ownership,
-and the full password-reset flow (including single-use enforcement). Unit
-tests cover pure logic: JWT signing/verification, the application status
-transition table, pagination parsing, and the success-assessment heuristic.
+Integration tests spin up `mongodb-memory-server`, so no external database is
+needed; they exercise real request/response cycles through Supertest, and the
+Socket.IO suites run an actual server on an ephemeral port with the real
+client.
+
+What the suite is built to catch, beyond the happy paths:
+
+- **Authorization as a matrix.** Every protected route is enumerated from the
+  real routers and driven through seven invalid-session shapes (missing,
+  malformed, wrong secret, expired, deleted user, deactivated, revoked
+  version), every role against every role-restricted route, a forged `role`
+  claim in a validly signed token, and the verified-email gate. Ownership and
+  IDOR rules are covered separately, resource by resource.
+- **Contract synchronisation.** The OpenAPI document is validated and compared
+  against the routers: documented parameters and request bodies must equal what
+  the Joi schemas accept, input-validating routes must document their `400`, and
+  no schema may leak a secret or require a field it does not define.
+- **Concurrency.** Sixteen tests drive real races — investors oversubscribing a
+  round, duplicate webhook deliveries, double refunds, refresh-token reuse,
+  duplicate applications, simultaneous CV uploads — against the atomic
+  operations that are supposed to make them safe.
+- **Query plans.** Index-sensitive queries assert which index wins and that no
+  collection scan or in-memory sort appears, never elapsed milliseconds.
+- **Mutation testing.** Security and domain invariants are re-verified by
+  breaking them on purpose: 48 of 49 mutants were killed, and the single
+  survivor is documented in place as a redundant guard.
+- **Determinism.** The full suite is run repeatedly and with `--randomize`;
+  order-dependent and polluting tests were found that way and fixed.
+
+Coverage at the current baseline: 97.6% statements, 88.3% branches, 97.7%
+functions, 98.4% lines.
 
 ## CI/CD
 
@@ -588,65 +620,6 @@ PaymentIntent creation, verifying event amount and currency against the
 record, `charge.refunded` and dispute events, and retry behaviour. Payment
 processing is **not** production-complete until Task 8 lands.
 
-## Money and the investment lifecycle
-
-**Money is always an integer number of minor units** (cents; USD is the only
-supported currency). Every monetary field carries a `Cents` suffix —
-`amountCents`, `totalRaisingCents`, `minInvestmentCents`,
-`raisedSoFarCents`, `reservedCents` — and is an integer in the API, in
-MongoDB and in the call to Stripe, which already expects minor units. Floats
-never touch money: `10.005` is rejected rather than rounded, and no code
-multiplies or divides an amount to store it. Display formatting (dividing by 100) is the client's job; `common/utils/money.js` has the one helper used for
-human-readable text in notifications.
-
-**The funding target is a hard cap.** A startup tracks `raisedSoFarCents`
-(confirmed payments) and `reservedCents` (investments awaiting payment), and
-the invariant is:
-
-```
-raisedSoFarCents + reservedCents <= totalRaisingCents
-```
-
-Creating an investment _reserves_ capacity, so two investors racing for the
-last slice of a round cannot both be accepted. The reservation is a single
-conditional update whose filter is the invariant itself
-(`$expr` comparing the document's own fields), so MongoDB enforces it rather
-than this process; read-compare-write cannot do that. A request that would
-exceed the target is refused with `422 FUNDING_TARGET_EXCEEDED`, and
-`GET /api/v1/startups/:id` exposes `remainingCents`.
-
-**Lifecycle**
-
-```
-                 payment confirmed
-   pending ──────────────────────────► paid ──────────► refunded (admin only, terminal)
-      │                                 ▲
-      │ payment failed                  │ retry succeeds (capacity re-checked)
-      ▼                                 │
-    failed ─────────────────────────────┘
-```
-
-| Transition           | Effect on the startup                                             |
-| -------------------- | ----------------------------------------------------------------- |
-| create → `pending`   | `reservedCents += amount` (refused if it would exceed the target) |
-| `pending` → `paid`   | `reservedCents -= amount`, `raisedSoFarCents += amount`           |
-| `pending` → `failed` | `reservedCents -= amount`                                         |
-| `failed` → `paid`    | `raisedSoFarCents += amount`, only if the round still has room    |
-| `paid` → `refunded`  | `raisedSoFarCents -= amount`                                      |
-
-Status is never accepted from a client; it changes only through these
-transitions. Refunds are admin-only (decision D3): an investor cannot reclaim
-money already credited to a startup. A refunded investment is terminal — it
-cannot be refunded twice or moved back into a payable state.
-
-**Task 7 / Task 8 boundary.** Task 7 owns the domain: money representation,
-the funding invariant, the state machine, and the `markPaid` / `markFailed` /
-`refund` service interface. **Task 8 owns Stripe**: webhook idempotency
-bookkeeping (a processed-event log), the outbound idempotency key on
-PaymentIntent creation, verifying event amount and currency against the
-record, `charge.refunded` and dispute events, and retry behaviour. Payment
-processing is **not** production-complete until Task 8 lands.
-
 ## Payments (Stripe)
 
 The server never touches card data: it creates a **PaymentIntent** and returns
@@ -720,15 +693,24 @@ inserted in application code.
 
 ## Deployment
 
-Not currently deployed. `docker-compose.yml` is a local/staging reference;
-for production, point `MONGODB_URI` at a managed MongoDB instance, set
-`STORAGE_DRIVER=s3`, and put the container behind a TLS-terminating proxy.
+Not currently deployed anywhere. What this repository provides is a
+container, a Compose file for local and staging use, and startup validation
+that refuses to run with an unsafe production configuration.
+**[docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)** covers the operational model in
+full: building and configuring the image, the health and readiness contract,
+graceful shutdown, the two persistent volumes and what backing them up means,
+index synchronisation, Stripe webhook setup, and — stated plainly — the things
+a real deployment still has to supply that this repository does not (a
+credentialed and network-isolated database, TLS termination, secret
+management, log shipping).
 
 ### Express 4 vs 5
 
-Investigated, not assumed. Express 5.2.1 does pull a patched `qs`
-(`^6.14.0`, resolving to `6.16.0` — outside the vulnerable `2.2.5–6.15.3`
-range), so migrating would close that advisory. It was deferred anyway:
+Investigated, not assumed. The `qs` advisory that once motivated this
+migration is already closed on Express 4, by pinning `qs` to `^6.16.0`
+through an `overrides` entry — `npm audit` reports zero vulnerabilities — so
+the security argument for moving no longer applies. The migration is deferred
+on its own merits:
 `express-mongo-sanitize@2.2.0` — the middleware providing NoSQL-injection
 protection on every request — reassigns `req.query` wholesale
 (`req.query = target`), and Express 5 defines `req.query` as a **read-only
