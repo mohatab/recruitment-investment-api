@@ -1,12 +1,13 @@
-# FINAL_AUDIT.md — Production-readiness rebuild report
+# First rebuild report
 
-> **Historical record.** This is the report from the _first_ rebuild pass, when
+> **Historical record** (formerly `FINAL_AUDIT.md` at the repository root; see
+> the [history index](./README.md)). This is the report from the _first_ rebuild pass, when
 > the suite stood at 43 tests across 11 suites. The project has moved well
 > beyond it since (677 tests across 36 suites at the time of writing), so the
 > figures, setup commands and Docker notes below are a snapshot, not current
 > instructions — `docker compose up` no longer publishes the database port, for
-> one. For how to run the project today see [README.md](./README.md) and
-> [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md).
+> one. For how to run the project today see [README.md](../../README.md) and
+> [docs/DEPLOYMENT.md](../DEPLOYMENT.md).
 
 Companion to `AUDIT.md` (the before-state). This is the after-state: what
 changed, why, and how it was verified.
@@ -221,39 +222,3 @@ npm run test:coverage
 npm run lint
 npm run format:check
 ```
-
-## Recommended GitHub presentation
-
-- Repository description: "Recruitment + startup-investment platform API —
-  JWT auth with refresh rotation, RBAC, Stripe payments with webhook
-  verification, real-time Socket.IO, Docker, CI, 43 tests."
-- Topics: `nodejs`, `express`, `mongodb`, `jwt`, `stripe`, `socket-io`,
-  `rest-api`, `docker`, `jest`
-- Pin `AUDIT.md` and `FINAL_AUDIT.md` in the repo description or README
-  top — a documented before/after is a stronger interview artifact than a
-  clean-looking repo with no visible history of judgment calls.
-- Do not restore the daily-activity workflow.
-
-## CV bullet points
-
-- Redesigned a fragmented 3-module Node.js/Express codebase (3 duplicate
-  auth systems, no service layer) into a layered architecture
-  (routes/controllers/services/models) with one shared auth system and
-  role-based authorization.
-- Found and fixed critical security vulnerabilities including a hardcoded
-  JWT secret, a plaintext-password reset path, and an unauthenticated
-  Socket.IO layer that allowed cross-user data access; documented the full
-  audit trail.
-- Implemented JWT authentication with rotating, hashed refresh tokens and a
-  single-use, TTL-expiring password-reset flow.
-- Built a Stripe-backed investment workflow with signature-verified,
-  idempotent webhook processing — payment state is never trusted from the
-  client.
-- Designed a recruitment application lifecycle with an enforced state
-  machine and database-level duplicate-application prevention.
-- Wrote a 43-test Jest/Supertest suite (unit + integration against an
-  in-memory MongoDB) and a CI pipeline (lint, format, test, coverage,
-  dependency audit, Docker build) that runs on every push.
-- Containerized the application with Docker/Docker Compose, including a
-  functional container health check wired to a real `/health` endpoint
-  that checks database connectivity.

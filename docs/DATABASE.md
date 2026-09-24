@@ -52,7 +52,8 @@ The original codebase had four: `mahmoud.User`, `matrix.user`,
 `mohamed.MohamedUser`, and a disconnected `your` profile collection with no
 owner at all. Nothing tied "user #123" in one module to "user #123" in
 another, which is also how a hardcoded JWT secret and a plaintext-password
-reset bug ended up isolated to only one of the four (see `AUDIT.md`). One
+reset bug ended up isolated to only one of the four (see the [original
+codebase audit](./history/ORIGINAL_CODEBASE_AUDIT.md)). One
 `User` document with a `role` enum (`candidate` / `recruiter` / `investor`
 / `startup` / `admin`) is both the fix for that and the natural shape for
 a platform where the same person could plausibly hold different roles

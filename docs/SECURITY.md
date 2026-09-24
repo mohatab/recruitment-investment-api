@@ -10,7 +10,8 @@ so it can be checked directly.
 - **Password hashing**: bcrypt, in a single `pre('save')` hook on the one
   `User` model (`src/modules/users/user.model.js`) — the pattern the
   original codebase's `matrix` module was missing, which is exactly how it
-  ended up storing a plaintext password on reset (`AUDIT.md` #2).
+  ended up storing a plaintext password on reset ([original codebase
+  audit](./history/ORIGINAL_CODEBASE_AUDIT.md) #2).
 - **JWT algorithm pinned** (`src/modules/auth/jwt.js`): both sign and
   verify are locked to `HS256` explicitly, not left to library defaults —
   closes algorithm-confusion attacks (a token crafted with `alg: none` or a

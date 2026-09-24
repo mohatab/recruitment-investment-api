@@ -17,27 +17,30 @@ route annotations.
 
 ### Documentation map
 
-| Document                                                                                                             | What it covers                                                                                                                   |
-| -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)                                                                     | Request lifecycle, the auth/payment/webhook/realtime flows, file storage, the Socket.IO event contract, error handling           |
-| [`docs/API.md`](./docs/API.md)                                                                                       | Endpoint index by domain, with the conventions every endpoint follows; the interactive reference is Swagger at `/api-docs`       |
-| [`docs/SECURITY.md`](./docs/SECURITY.md)                                                                             | Authentication, authorization, upload and payment controls, headers, logging boundaries, deployment requirements, accepted risks |
-| [`docs/DATABASE.md`](./docs/DATABASE.md)                                                                             | Collections, relationships, indexes and the query plans that justify them                                                        |
-| [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)                                                                         | Building, configuring and operating the container; health, shutdown, volumes, backups, what production still needs               |
-| [`docs/MIGRATIONS.md`](./docs/MIGRATIONS.md)                                                                         | Breaking changes from the rebuild and the migration scripts for an existing database                                             |
-| [`docs/API_ENDPOINT_INVENTORY.md`](./docs/API_ENDPOINT_INVENTORY.md)                                                 | Every route with its authorization rule and the test that covers it                                                              |
-| [`AUDIT.md`](./AUDIT.md) · [`FINAL_AUDIT.md`](./FINAL_AUDIT.md) · [`docs/PROJECT_AUDIT.md`](./docs/PROJECT_AUDIT.md) | Historical records of the pre-rebuild codebase — kept as the baseline, deliberately not updated                                  |
+| Document                                                             | What it covers                                                                                                                                                      |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)                     | Request lifecycle, the auth/payment/webhook/realtime flows, file storage, the Socket.IO event contract, error handling                                              |
+| [`docs/API.md`](./docs/API.md)                                       | Endpoint index by domain, with the conventions every endpoint follows; the interactive reference is Swagger at `/api-docs`                                          |
+| [`docs/SECURITY.md`](./docs/SECURITY.md)                             | Authentication, authorization, upload and payment controls, headers, logging boundaries, deployment requirements, accepted risks                                    |
+| [`docs/DATABASE.md`](./docs/DATABASE.md)                             | Collections, relationships, indexes and the query plans that justify them                                                                                           |
+| [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)                         | Building, configuring and operating the container; health, shutdown, volumes, backups, what production still needs                                                  |
+| [`docs/MIGRATIONS.md`](./docs/MIGRATIONS.md)                         | Breaking changes from the rebuild and the migration scripts for an existing database                                                                                |
+| [`docs/API_ENDPOINT_INVENTORY.md`](./docs/API_ENDPOINT_INVENTORY.md) | Every route with its authorization rule and the test that covers it                                                                                                 |
+| [`docs/history/`](./docs/history/)                                   | Point-in-time records of the original codebase, the first rebuild and the audit that started the current hardening — kept as the baseline, deliberately not updated |
 
 ## Problem statement / origin
 
 This started as three unrelated student mini-projects (recruitment, investor/
 startup management, notifications) glued into one Express app, each with its
-own `User` model and its own JWT scheme. `AUDIT.md` is the full record of
+own `User` model and its own JWT scheme. [`docs/history/ORIGINAL_CODEBASE_AUDIT.md`](./docs/history/ORIGINAL_CODEBASE_AUDIT.md)
+is the full record of
 that state — including confirmed critical bugs (a hardcoded JWT secret, a
 password-reset path that stored plaintext passwords, an unauthenticated
 Socket.IO layer that let any client join any user's private room) — and the
 rationale behind every structural decision below. This README describes the
-result of fixing that; `AUDIT.md` describes what was actually wrong and why.
+result of fixing that; the [original codebase
+audit](./docs/history/ORIGINAL_CODEBASE_AUDIT.md) describes what was actually
+wrong and why.
 
 ## Features
 
@@ -463,7 +466,8 @@ check → test with coverage → `npm audit` (informational) → Docker build.
 
 ## Security
 
-See `AUDIT.md` for the full list of vulnerabilities found in the original
+See the [original codebase audit](./docs/history/ORIGINAL_CODEBASE_AUDIT.md)
+for the full list of vulnerabilities found in the original
 codebase and how each was fixed. Current posture:
 
 - Helmet security headers, CORS allowlist, `express-mongo-sanitize` against

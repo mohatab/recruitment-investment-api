@@ -8,7 +8,7 @@ const MOUNTS = [
   ["/api/v1/auth", "../src/modules/auth/auth.routes"],
   ["/api/v1/users", "../src/modules/users/user.routes"],
   ["/api/v1/jobs", "../src/modules/recruitment/jobs/job.routes"],
-  ["/api/v1/applications", "../src/modules/recruitment/applications/applications.top.routes"],
+  ["/api/v1/applications", "../src/modules/recruitment/applications/application.top-level.routes"],
   ["/api/v1/startups", "../src/modules/investment/startups/startup.routes"],
   ["/api/v1/investors", "../src/modules/investment/investors/investor.routes"],
   ["/api/v1/investments", "../src/modules/investment/investments/investment.routes"],

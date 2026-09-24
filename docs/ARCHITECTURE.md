@@ -171,7 +171,8 @@ token expires or when the user's sessions are revoked.
 Every room a socket can join is derived from its own verified identity at
 connect time — never from an event payload. There is no event that takes a
 raw room name or another user's id and joins the caller to it. This is the
-direct fix for the original codebase's vulnerability (`AUDIT.md` #6/#7):
+direct fix for the original codebase's vulnerability
+([original codebase audit](./history/ORIGINAL_CODEBASE_AUDIT.md) #6/#7):
 `joinUserRoom` there trusted a client-supplied `userId`.
 
 Presence events go only to the user's conversation partners
