@@ -14,4 +14,15 @@ const experienceSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// `__v` is Mongoose's internal version counter, not part of the API contract —
+// the OpenAPI schema does not declare it and the other models already strip it.
+// A schema-level transform (rather than a toJSON method) keeps any virtuals
+// this schema declares.
+experienceSchema.set("toJSON", {
+  transform: (doc, ret) => {
+    delete ret.__v;
+    return ret;
+  },
+});
+
 module.exports = mongoose.model("Experience", experienceSchema);

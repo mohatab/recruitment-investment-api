@@ -59,6 +59,18 @@ jobSchema.index({ status: 1, createdAt: -1 });
 jobSchema.index({ recruiter: 1, createdAt: -1 });
 jobSchema.index({ title: "text", role: "text", tags: "text" });
 
+// `__v` is Mongoose's internal version counter, not part of the API contract —
+// the OpenAPI schema does not declare it and the other models already strip it.
+// A schema-level transform (rather than a toJSON method) keeps any virtuals
+// this schema declares.
+jobSchema.set("toJSON", {
+  virtuals: true,
+  transform: (doc, ret) => {
+    delete ret.__v;
+    return ret;
+  },
+});
+
 module.exports = mongoose.model("Job", jobSchema);
 module.exports.STATUSES = STATUSES;
 module.exports.SALARY_TYPES = SALARY_TYPES;

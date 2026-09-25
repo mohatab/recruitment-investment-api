@@ -11,7 +11,7 @@ yarn.lock
 uploads/
 
 # Personal documents never belong in this repo (real CVs/coursework were once
-# committed by accident, see docs/PROJECT_AUDIT.md). The app has no committed
+# committed by accident, see docs/history/PRE_HARDENING_AUDIT.md). The app has no committed
 # binary assets; add an explicit !exception if that ever changes.
 *.pdf
 *.doc

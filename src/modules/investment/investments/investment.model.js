@@ -51,6 +51,17 @@ const investmentSchema = new mongoose.Schema(
 investmentSchema.index({ investor: 1, createdAt: -1 });
 investmentSchema.index({ startup: 1, createdAt: -1 });
 
+// `__v` is Mongoose's internal version counter, not part of the API contract —
+// the OpenAPI schema does not declare it and the other models already strip it.
+// A schema-level transform (rather than a toJSON method) keeps any virtuals
+// this schema declares.
+investmentSchema.set("toJSON", {
+  transform: (doc, ret) => {
+    delete ret.__v;
+    return ret;
+  },
+});
+
 module.exports = mongoose.model("Investment", investmentSchema);
 module.exports.STATUSES = STATUSES;
 module.exports.TRANSITIONS = TRANSITIONS;

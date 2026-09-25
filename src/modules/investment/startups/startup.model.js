@@ -49,5 +49,17 @@ startupSchema.index({ industries: 1, stage: 1, createdAt: -1 });
 // The unfiltered browse list, which otherwise scans every startup profile.
 startupSchema.index({ createdAt: -1 });
 
+// `__v` is Mongoose's internal version counter, not part of the API contract —
+// the OpenAPI schema does not declare it and the other models already strip it.
+// A schema-level transform (rather than a toJSON method) keeps any virtuals
+// this schema declares.
+startupSchema.set("toJSON", {
+  virtuals: true,
+  transform: (doc, ret) => {
+    delete ret.__v;
+    return ret;
+  },
+});
+
 module.exports = mongoose.model("Startup", startupSchema);
 module.exports.STAGES = STAGES;

@@ -24,5 +24,16 @@ applicationSchema.index({ job: 1, applicant: 1 }, { unique: true });
 applicationSchema.index({ job: 1, createdAt: -1 });
 applicationSchema.index({ applicant: 1, createdAt: -1 });
 
+// `__v` is Mongoose's internal version counter, not part of the API contract —
+// the OpenAPI schema does not declare it and the other models already strip it.
+// A schema-level transform (rather than a toJSON method) keeps any virtuals
+// this schema declares.
+applicationSchema.set("toJSON", {
+  transform: (doc, ret) => {
+    delete ret.__v;
+    return ret;
+  },
+});
+
 module.exports = mongoose.model("Application", applicationSchema);
 module.exports.STATUSES = STATUSES;
