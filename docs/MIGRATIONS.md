@@ -167,7 +167,8 @@ and acks use the same error codes as the REST API.
 
 Beyond the two migration scripts above:
 
-- **Indexes changed** in Task 11. Mongoose creates new ones on connect but never
+- **Indexes changed** during the hardening pass. Mongoose creates new ones on
+  connect but never
   drops superseded ones — run `node scripts/sync-indexes.js` after deploying.
   See [DATABASE.md](./DATABASE.md#index-maintenance).
 - **`Application` gained a unique `(job, applicant)` index.** A database with

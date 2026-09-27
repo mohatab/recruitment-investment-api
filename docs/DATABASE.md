@@ -217,27 +217,6 @@ would be flaky.
   for the two list endpoints. The previous single-field `job`/`applicant`
   indexes were dropped as redundant prefixes.
 
-## Investment constraints
-
-- **Money is integer minor units** in every field (`*Cents`), validated with
-  `Number.isSafeInteger` at the schema level as well as by Joi, so a direct
-  model write cannot introduce a fractional amount either.
-- **Funding invariant**: `raisedSoFarCents + reservedCents <= totalRaisingCents`,
-  enforced by conditional updates using `$expr` on the startup document —
-  never by reading, comparing and writing in the service.
-- `Investment.stripePaymentIntentId` is **unique and sparse**: one investment
-  per PaymentIntent, while investments that have not reached Stripe yet
-  coexist without a value.
-- `Startup.owner` is unique (one profile per account); `remainingCents` is a
-  virtual, not a stored field, so it can never drift from the counters.
-- Indexes: `Investment.{investor, createdAt}` and `Investment.{startup, createdAt}`
-  for the two list endpoints; `Startup.{industries, stage}` for browsing and
-  matching. The previous single-field `investor`/`startup` indexes were
-  replaced by those compounds.
-- Existing float amounts are converted by
-  `scripts/migrate-money-to-minor-units.js` (idempotent, `--dry-run`
-  supported, reports any value that was not a whole number of cents).
-
 ## Index maintenance
 
 Mongoose creates missing indexes on connect, but never drops one a model no
@@ -251,7 +230,7 @@ node scripts/sync-indexes.js             # apply it
 It is idempotent, touches only indexes (never documents), and is deliberately
 not part of application startup — dropping an index is a decision to take
 knowingly, and building one over a large collection is not something a boot
-sequence should trigger. Task 11 supersedes four indexes
+sequence should trigger. The current models supersede four earlier indexes
 (`Message.{roomId, createdAt}`, `Notification.{user, createdAt}`,
 `User.{role}`, `Startup.{industries, stage}`), each replaced by a compound
 index that starts with the same keys, so running it after deploying is what

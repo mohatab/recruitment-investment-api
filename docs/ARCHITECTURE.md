@@ -17,7 +17,22 @@ src/
   common/           middleware, errors, utils, storage — shared by every module, owned by none
   docs/swagger.js   OpenAPI spec generated from route JSDoc
   realtime/         Socket.IO auth + connection handling, in-memory presence
-  modules/          one folder per domain (see README's Architecture section for the full list)
+  modules/          one folder per domain:
+    auth/             register/login/refresh/logout, password reset, email verification
+    users/            profile, password change, CV upload/download
+    recruitment/
+      jobs/           job postings
+      applications/   applications and their status lifecycle
+    investment/
+      startups/       fundraising profiles, success-assessment heuristic
+      investors/      investor profiles + criteria, matching
+      investments/    Stripe-backed investments
+    payments/         Stripe client + webhook handler
+    notifications/    in-app notifications
+    messaging/        direct messages
+    experience/       candidate work history
+    contact/          public contact form
+    health/           liveness/readiness probes
 ```
 
 `common/` is deliberately the only cross-module dependency. Modules do not
@@ -140,6 +155,28 @@ metadata clients see (filename, type, size, `downloadPath`). Nothing is served
 statically, so there is no path that bypasses the authorization check, and
 switching drivers changes no stored data — the key is driver-independent.
 
+## Email
+
+One transport (`common/services/email.js`) with bounded connection, greeting
+and socket timeouts (10s/10s/20s), so a hung mail server cannot tie up a
+request; a failed send is retried once.
+
+**Failure semantics**: sending never throws and never fails the operation that
+triggered it. Registration commits the user and its verification token before
+the mail is dispatched; a password-reset request answers `200` regardless. A
+mail outage therefore costs a user a "resend", not their account or a
+misleading error. The trade-off is deliberate — a durable outbox is the next
+increment, and neither flow's guarantees depend on delivery.
+
+**What is never logged**: message bodies, subjects containing tokens,
+recipients' full addresses, or SMTP credentials. A failure records only the
+subject, the recipient's _domain_, the error message, the attempt number and
+whether it will retry. Tokens travel in the URL _fragment_
+(`${APP_URL}/reset-password#token=...`), which browsers never send to a server,
+keeping them out of the client app's access logs and `Referer` headers. Every
+user-controlled value in an HTML mail is escaped
+(`common/services/email.templates.js`).
+
 ## Real-time (Socket.IO)
 
 ```mermaid
@@ -165,7 +202,7 @@ endpoint, awaits the handler inside `try/catch`, logs unexpected failures and
 answers through the ack (`{ ok: true, data }` or `{ ok: false, error: { code, message } }`).
 A throw or rejection escaping a Socket.IO listener becomes an unhandled
 rejection, which terminates the process — a malformed `chat:message` did
-exactly that before (audit C1). A socket is disconnected when its access
+exactly that before (pre-hardening audit, finding C1). A socket is disconnected when its access
 token expires or when the user's sessions are revoked.
 
 Every room a socket can join is derived from its own verified identity at
@@ -275,10 +312,57 @@ Deliberate choices, because payment workflows get these wrong elsewhere:
 5. **`failed -> paid` is a legal transition** (Stripe allows retrying a
    declined PaymentIntent) and re-checks the cap; a late success that no
    longer fits is reported back uncredited instead of overshooting the target
-   (audit C3).
+   (pre-hardening audit, finding C3).
 
-Money is integer minor units end to end — see `common/utils/money.js` and the
-README's "Money and the investment lifecycle".
+### Money and the investment lifecycle
+
+**Money is always an integer number of minor units** (cents; USD is the only
+supported currency). Every monetary field carries a `Cents` suffix —
+`amountCents`, `totalRaisingCents`, `minInvestmentCents`, `raisedSoFarCents`,
+`reservedCents` — and is an integer in the API, in MongoDB and in the call to
+Stripe, which already expects minor units. Floats never touch money: `10.005`
+is rejected rather than rounded, and no code multiplies or divides an amount to
+store it. Display formatting (dividing by 100) is the client's job;
+`common/utils/money.js` holds the one helper used for human-readable text in
+notifications.
+
+**The funding target is a hard cap.** A startup tracks `raisedSoFarCents`
+(confirmed payments) and `reservedCents` (investments awaiting payment), and
+the invariant is:
+
+```
+raisedSoFarCents + reservedCents <= totalRaisingCents
+```
+
+Creating an investment _reserves_ capacity, so two investors racing for the
+last slice of a round cannot both be accepted. The reservation is a single
+conditional update whose filter is the invariant itself (`$expr` comparing the
+document's own fields), so MongoDB enforces it rather than this process;
+read-compare-write cannot do that. A request that would exceed the target is
+refused with `422 FUNDING_TARGET_EXCEEDED`, and `GET /api/v1/startups/:id`
+exposes `remainingCents`.
+
+```
+                 payment confirmed
+   pending --------------------------> paid ----------> refunded (admin only, terminal)
+      |                                 ^
+      | payment failed                  | retry succeeds (capacity re-checked)
+      v                                 |
+    failed -----------------------------+
+```
+
+| Transition            | Effect on the startup                                             |
+| --------------------- | ----------------------------------------------------------------- |
+| create -> `pending`   | `reservedCents += amount` (refused if it would exceed the target) |
+| `pending` -> `paid`   | `reservedCents -= amount`, `raisedSoFarCents += amount`           |
+| `pending` -> `failed` | `reservedCents -= amount`                                         |
+| `failed` -> `paid`    | `raisedSoFarCents += amount`, only if the round still has room    |
+| `paid` -> `refunded`  | `raisedSoFarCents -= amount`                                      |
+
+Status is never accepted from a client; it changes only through these
+transitions. Refunds are admin-only (pre-hardening audit, decision D3): an investor cannot reclaim
+money already credited to a startup. A refunded investment is terminal — it
+cannot be refunded twice or moved back into a payable state.
 
 **Layering.** The investment module owns the domain rules above and the
 `markPaid` / `markFailed` / `markRefunded` / `refund` interface; nothing
@@ -288,7 +372,47 @@ delivery harmless, outbound idempotency keys, verification of each event
 against the stored investment, refund reconciliation, and the automatic refund
 of a payment that arrives after a round is full. Provider failures become
 `502 PAYMENT_PROVIDER_ERROR`; Stripe detail never reaches a client or a log
-line. See the README's "Payments (Stripe)" for the event table and trust model.
+line.
+
+### Webhook trust model and event handling
+
+`POST /api/v1/payments/webhook` authenticates by Stripe signature over the raw
+body (it takes no user session, and a bearer token neither helps nor is
+required). Stale signatures are rejected by Stripe's own tolerance window,
+which is what stops replay. Every accepted event is claimed in a `StripeEvent`
+log keyed by the unique Stripe event id: duplicate and concurrent deliveries
+are acknowledged without reprocessing, and a failed attempt releases its claim
+so Stripe's retry can run again. Before any state moves, the event's
+PaymentIntent, **amount and currency are compared with the stored
+investment**; a mismatch is recorded and ignored.
+
+| Event                                                      | Effect                                                                                                            |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `payment_intent.succeeded`                                 | credit the investment (`pending`/`failed` -> `paid`)                                                              |
+| `payment_intent.payment_failed`, `payment_intent.canceled` | release the reservation (-> `failed`, still revivable)                                                            |
+| `charge.refunded`                                          | reconcile a refund made anywhere, including the Stripe dashboard (`paid` -> `refunded`)                           |
+| `charge.dispute.created`, `charge.dispute.closed`          | **observed and logged only** — the domain has no disputed state, and inventing one is not this product's rule yet |
+| anything else                                              | acknowledged and recorded as `no_change`                                                                          |
+
+**Idempotency.** Both outbound calls carry a key derived from the investment id
+(`investment-<id>`, `refund-<id>`, `auto-refund-<id>`), so a retry after a
+timeout returns Stripe's original object instead of charging or refunding
+twice. The PaymentIntent id is stored with a conditional update, so concurrent
+creation for one investment settles on a single id.
+
+**Late payments.** If a payment is confirmed after the round has filled up, the
+funding cap keeps it uncredited — and it is then **refunded automatically**
+(idempotently), stamping `autoRefundedAt` and `stripeRefundId`. The investment
+stays `failed`, and `raisedSoFarCents` never exceeds `totalRaisingCents`.
+
+**Refunds** stay admin-only. The status is claimed before Stripe is called, so
+concurrent refunds reach Stripe once; if Stripe refuses, the claim is rolled
+back and the investment stays `paid`. A partial refund has no domain
+representation, so it is logged for an operator rather than guessed at.
+
+**Provider failures** surface as `502 PAYMENT_PROVIDER_ERROR` — an actionable
+upstream failure, not a generic 500 — and no Stripe message, key, request
+payload or signature is ever logged or returned.
 
 ## API contract
 

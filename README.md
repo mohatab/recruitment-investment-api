@@ -1,770 +1,249 @@
 # Recruitment & Investment Platform API
 
 [![CI](https://github.com/mohatab/recruitment-investment-api/actions/workflows/ci.yml/badge.svg)](https://github.com/mohatab/recruitment-investment-api/actions/workflows/ci.yml)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D18-5FA04E?logo=node.js&logoColor=white)](package.json)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A Node.js/Express REST API for two connected products sharing one platform:
+A REST API for a platform with two connected sides: **recruitment** (recruiters
+post jobs, candidates apply with a stored CV, applications move through an
+enforced status lifecycle) and **investment** (startups publish fundraising
+rounds, investors save criteria and get matched, and an investment is a real
+Stripe-backed payment confirmed by a signed webhook).
 
-- **Recruitment** — recruiters post jobs, candidates apply with a CV, and an
-  application moves through a real status lifecycle.
-- **Investment** — startups publish fundraising profiles, investors save
-  criteria and get matched, and an investment is a real Stripe-backed
-  payment with server-verified confirmation.
+Built with Node.js, Express, MongoDB and Socket.IO. It covers authentication
+and user management, jobs and applications, startups and investments, Stripe
+payments, private file storage, transactional email, in-app notifications and
+real-time messaging — documented with OpenAPI and verified by an automated
+suite that includes authorization, contract, concurrency and query-plan tests.
 
-Plus the cross-cutting pieces a platform like this needs: JWT auth with
-refresh-token rotation, role-based authorization, real-time notifications
-and messaging over Socket.IO, and Swagger/OpenAPI docs generated from the
-route annotations.
+This is a portfolio project, engineered to production standards rather than
+deployed as a commercial service. [What a real deployment still has to
+supply](./docs/DEPLOYMENT.md#what-a-production-deployment-still-needs) is
+written down rather than implied.
 
-### Documentation map
+## At a glance
 
-| Document                                                             | What it covers                                                                                                                                                      |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)                     | Request lifecycle, the auth/payment/webhook/realtime flows, file storage, the Socket.IO event contract, error handling                                              |
-| [`docs/API.md`](./docs/API.md)                                       | Endpoint index by domain, with the conventions every endpoint follows; the interactive reference is Swagger at `/api-docs`                                          |
-| [`docs/SECURITY.md`](./docs/SECURITY.md)                             | Authentication, authorization, upload and payment controls, headers, logging boundaries, deployment requirements, accepted risks                                    |
-| [`docs/DATABASE.md`](./docs/DATABASE.md)                             | Collections, relationships, indexes and the query plans that justify them                                                                                           |
-| [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)                         | Building, configuring and operating the container; health, shutdown, volumes, backups, what production still needs                                                  |
-| [`docs/MIGRATIONS.md`](./docs/MIGRATIONS.md)                         | Breaking changes from the rebuild and the migration scripts for an existing database                                                                                |
-| [`docs/API_ENDPOINT_INVENTORY.md`](./docs/API_ENDPOINT_INVENTORY.md) | Every route with its authorization rule and the test that covers it                                                                                                 |
-| [`docs/history/`](./docs/history/)                                   | Point-in-time records of the original codebase, the first rebuild and the audit that started the current hardening — kept as the baseline, deliberately not updated |
+| Measure      | Verified in the final audit                                                         |
+| ------------ | ----------------------------------------------------------------------------------- |
+| Tests        | 683 across 37 suites, run against an in-memory MongoDB                              |
+| Coverage     | 97.64% statements · 88.30% branches · 97.77% functions · 98.46% lines               |
+| API surface  | 46 documented paths · 57 operations · 60 OpenAPI schemas                            |
+| Dependencies | `npm audit` reports 0 vulnerabilities                                               |
+| Tooling      | ESLint and Prettier clean; CI runs lint, format, coverage, audit and a Docker build |
 
-## Problem statement / origin
+## Engineering highlights
 
-This started as three unrelated student mini-projects (recruitment, investor/
-startup management, notifications) glued into one Express app, each with its
-own `User` model and its own JWT scheme. [`docs/history/ORIGINAL_CODEBASE_AUDIT.md`](./docs/history/ORIGINAL_CODEBASE_AUDIT.md)
-is the full record of
-that state — including confirmed critical bugs (a hardcoded JWT secret, a
-password-reset path that stored plaintext passwords, an unauthenticated
-Socket.IO layer that let any client join any user's private room) — and the
-rationale behind every structural decision below. This README describes the
-result of fixing that; the [original codebase
-audit](./docs/history/ORIGINAL_CODEBASE_AUDIT.md) describes what was actually
-wrong and why.
+The parts worth reading first, each with the file that implements it:
 
-## Features
-
-- JWT auth (access + rotating refresh tokens), role-based authorization
-  (`candidate` / `recruiter` / `investor` / `startup` / `admin`)
-- Job posting, search/filtering/pagination, and a full application lifecycle
-  with enforced status transitions and duplicate-application prevention
-- Startup fundraising profiles, investor criteria, and a matching endpoint
-- Stripe-backed investments with a **signature-verified webhook**, idempotent
-  PaymentIntent creation and refunds, a processed-event log, and automatic
-  refunds for payments that arrive after a round is full — payment
-  state is never trusted from the client
-- Real-time notifications and authenticated direct messaging over Socket.IO:
-  rooms are derived from the verified session (never from a payload), every
-  event is validated, rate-limited and crash-proofed, and presence is
-  reference-counted per connection and visible only to conversation partners
-- Private file storage: uploads are content-verified (magic bytes, not just
-  the declared type), stored under server-generated keys outside any served
-  directory, and readable only through authorized download endpoints
-- Centralized error handling, structured logging, rate limiting, Helmet,
-  Mongo-injection sanitization, request correlation IDs
-- Swagger/OpenAPI docs at `/api-docs`
-
-## Architecture
-
-```
-src/
-  app.js, server.js        Express app assembly + HTTP/Socket.IO bootstrap
-  config/                  env loading + validation, MongoDB connection
-  common/                  middleware, errors, utils, storage abstraction — shared by every module
-  docs/swagger.js          OpenAPI spec generation
-  realtime/                Socket.IO auth, room/presence management
-  modules/
-    auth/                  register/login/refresh/logout, password reset
-    users/                 profile, password change, CV upload
-    recruitment/
-      jobs/                job postings
-      applications/        applications, status lifecycle
-    investment/
-      startups/            fundraising profiles, success-assessment heuristic
-      investors/           investor profiles + criteria, matching
-      investments/         Stripe-backed investments
-    payments/              Stripe client + webhook handler
-    notifications/         in-app notifications
-    messaging/             direct messages
-    experience/            candidate work history
-    contact/               public contact form
-    health/                liveness/readiness check
-```
-
-Each module is self-contained: `*.routes.js` → `*.controller.js` →
-`*.service.js` (business logic + authorization checks) → `*.model.js`
-(Mongoose schema) → `*.validation.js` (Joi schemas). Routes never touch
-Mongoose directly.
-
-```mermaid
-flowchart LR
-    Client -->|HTTP| App[Express app.js]
-    Client -->|WebSocket + JWT| Socket[Socket.IO]
-    App --> Auth[auth]
-    App --> Jobs[recruitment/jobs]
-    App --> Apps[recruitment/applications]
-    App --> Startups[investment/startups]
-    App --> Investors[investment/investors]
-    App --> Investments[investment/investments]
-    Investments --> Stripe[(Stripe)]
-    Stripe -->|signed webhook| Investments
-    Apps --> Notifications[notifications]
-    Socket --> Notifications
-    Socket --> Messaging[messaging]
-    Auth --> DB[(MongoDB)]
-    Jobs --> DB
-    Apps --> DB
-    Startups --> DB
-    Investors --> DB
-    Investments --> DB
-    Notifications --> DB
-    Messaging --> DB
-```
+- **Concurrency-safe funding reservations.** A pending investment reserves
+  capacity, and the reservation is one conditional update whose filter _is_ the
+  invariant (`$expr` over the startup's own fields), so MongoDB refuses an
+  oversubscription instead of the process deciding. Tested by racing real
+  writers, not by mocking. → `investment.service.js`,
+  [DATABASE.md](./docs/DATABASE.md#investment-constraints)
+- **Money as integer minor units.** Every monetary field is an integer number
+  of cents with a `Cents` suffix, end to end through Mongo and Stripe. A
+  fractional amount is rejected, never rounded. → `common/utils/money.js`
+- **Idempotent Stripe webhooks.** Signature verified over the raw body,
+  at-least-once delivery absorbed by a unique processed-event log with a TTL,
+  outbound idempotency keys on every call, and event amount/currency checked
+  against the stored investment before anything moves. →
+  [ARCHITECTURE.md](./docs/ARCHITECTURE.md#investment--payment-flow)
+- **Authorization tested as a matrix.** Every protected route is enumerated
+  from the real routers and driven through invalid-session shapes, wrong roles,
+  forged role claims and ownership/IDOR cases, so an unguarded new route fails
+  the suite. → `test/integration/authorization-matrix.test.js`
+- **Revocable sessions.** Access tokens carry a session version; a password
+  change, reset, `logout-all`, admin deactivation or refresh-token reuse
+  invalidates every outstanding token and disconnects open sockets. →
+  [SECURITY.md](./docs/SECURITY.md#authentication)
+- **Private file storage.** No static serving: uploads are typed by magic
+  bytes, stored under server-generated keys, and readable only through
+  endpoints that authorize the request that reads the bytes. →
+  [ARCHITECTURE.md](./docs/ARCHITECTURE.md#file-storage)
+- **Indexes proven by query plans.** Index-sensitive queries assert the winning
+  index and the absence of collection scans and in-memory sorts via
+  `explain("executionStats")` — a removed index breaks the build. →
+  [DATABASE.md](./docs/DATABASE.md#query-plans-and-how-they-were-checked)
+- **The OpenAPI document is tested against the code.** Documented parameters
+  and bodies must equal what the Joi schemas accept, and no response schema may
+  leak a secret. → `test/unit/swagger-contract.test.js`
+- **Mutation-tested invariants.** Security and domain rules were re-verified by
+  breaking them on purpose: 48 of 49 mutants killed, with the one survivor
+  documented in place as a redundant guard.
+- **Hardened container.** Non-root, read-only root filesystem, no new
+  privileges, one writable volume, and a MongoDB with no published host port. →
+  [DEPLOYMENT.md](./docs/DEPLOYMENT.md)
 
 ## Tech stack
 
-Node.js / Express · MongoDB + Mongoose · Socket.IO · JWT + bcryptjs · Stripe
-· Multer (+ optional S3 via `@aws-sdk/client-s3`) · Joi · Jest + Supertest +
-`mongodb-memory-server` · swagger-jsdoc/swagger-ui-express · Docker.
+| Area                | Used                                                                         |
+| ------------------- | ---------------------------------------------------------------------------- |
+| Runtime & framework | Node.js 20 (≥18 supported), Express 4                                        |
+| Database            | MongoDB 7, Mongoose                                                          |
+| Auth & security     | JWT, bcrypt, Helmet, Joi, `express-rate-limit`, `express-mongo-sanitize`     |
+| Payments            | Stripe (PaymentIntents + webhooks)                                           |
+| Real-time           | Socket.IO                                                                    |
+| Files & email       | Multer (memory storage), local disk or any S3-compatible service, Nodemailer |
+| Docs                | swagger-jsdoc, Swagger UI                                                    |
+| Testing             | Jest, Supertest, `mongodb-memory-server`, `socket.io-client`                 |
+| DevOps              | Docker, Docker Compose, GitHub Actions                                       |
 
-## Authentication & roles
+## Quick start
 
-- **Access tokens**: JWTs (`JWT_ACCESS_EXPIRES_IN`, default `15m`) sent as
-  `Authorization: Bearer <token>`. Every authenticated request (and every
-  Socket.IO handshake) also checks the stored user: the account must be active
-  and the token's session generation (`ver`) must match `User.tokenVersion`.
-  Role is taken from the stored user, never from the request.
-- **Refresh tokens**: opaque, single use, stored as SHA-256 hashes, 7 days by
-  default. `POST /api/v1/auth/refresh` consumes the token atomically, so concurrent
-  requests can't both succeed. **Replaying an already-rotated token revokes
-  every session of that user** (reuse detection).
-- **Session revocation**: changing or resetting the password, admin
-  deactivation, `POST /api/v1/auth/logout-all` and refresh-token reuse all increment
-  `User.tokenVersion`, which invalidates every outstanding access and refresh
-  token and disconnects the user's open sockets. `POST /api/v1/auth/logout`
-  revokes a single refresh token. Changing the password returns a fresh token
-  pair for the caller.
-- **Passwords**: bcrypt; at least 8 characters and at most 72 bytes (bcrypt's
-  input limit, rejected rather than silently truncated).
-- **Deactivated accounts** get `403 ACCOUNT_DISABLED` at login, but only after
-  the correct password, so account status isn't disclosed to guessers. Admins
-  toggle status with `PATCH /api/v1/users/:id/status`.
-- **Email verification**: registration emails a link
-  (`${APP_URL}/verify-email#token=…`, valid 24 h, single use). The client app
-  posts the token to `POST /api/v1/auth/verify-email`. Unverified users can sign
-  in and manage their profile, but posting jobs and starting investments
-  returns `403 EMAIL_NOT_VERIFIED`. Without SMTP configured in local
-  development, mark an account verified with
-  `db.users.updateOne({ email: "you@example.com" }, { $set: { emailVerifiedAt: new Date() } })`.
-- **Password reset**: `POST /api/v1/auth/forgot-password` returns immediately with
-  the same body for any email; the lookup and email happen afterwards, so
-  timing doesn't reveal registered addresses. The link
-  (`${APP_URL}/reset-password#token=…`) is valid 1 hour and single use, a newer
-  link supersedes an older one, and at most one email per account is sent per
-  minute. A successful reset revokes every session. Tokens sit in the URL
-  fragment, so they never reach the client app's server logs.
-- `admin` cannot be self-registered; it's provisioned directly in the database.
-
-| Role      | Can do                                                                           |
-| --------- | -------------------------------------------------------------------------------- |
-| candidate | apply to jobs, manage own profile/experience/CV                                  |
-| recruiter | post/manage jobs, review & move applications through their lifecycle             |
-| startup   | manage one fundraising profile, view investments received                        |
-| investor  | manage criteria (private), browse/match startups, create investments             |
-| admin     | list users, activate/deactivate accounts, send notifications, refund investments |
-
-## API documentation
-
-Interactive docs at `/api-docs` when the app is running (generated from the
-route JSDoc annotations, so it can't describe an endpoint that doesn't
-exist). Every endpoint documents its auth requirement, request/response
-shape, and error responses.
-
-### Versioning
-
-Every application endpoint lives under **`/api/v1`**. The health probes
-(`/health`, `/health/ready`) sit outside the prefix on purpose: they are
-infrastructure endpoints for orchestrators, not part of the product API, and
-must not move when `v2` arrives.
-
-### Response envelope
-
-```json
-{ "success": true, "data": {}, "message": "..." }
-```
-
-List endpoints add `pagination`:
-
-```json
-{ "success": true, "data": [], "pagination": { "page": 1, "limit": 20, "total": 42, "totalPages": 3 }, "message": "OK" }
-```
-
-Errors always carry a stable code and the request id (also sent as the
-`X-Request-Id` header):
-
-```json
-{
-  "success": false,
-  "error": { "code": "VALIDATION_ERROR", "message": "...", "details": [{ "field": "email", "message": "..." }] },
-  "requestId": "0b2ef09f-90cd-4ac6-bd52-1dbd4a2f0b2f"
-}
-```
-
-`204` responses (deletes) have no body, and the Stripe webhook answers in
-Stripe's own format rather than this envelope.
-
-### Status codes
-
-| Code            | Meaning                                                                                                                                                                                                                            |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 200 / 201 / 204 | OK · created (including the first `PUT` to a singleton profile) · deleted, no body                                                                                                                                                 |
-| 400             | Malformed request: schema violation (`VALIDATION_ERROR` with `details`), `INVALID_JSON`, `INVALID_ID`, `INVALID_TOKEN`                                                                                                             |
-| 401             | No valid session (`UNAUTHORIZED`)                                                                                                                                                                                                  |
-| 403             | Authenticated but not allowed (`FORBIDDEN`, `EMAIL_NOT_VERIFIED`, `ACCOUNT_DISABLED`)                                                                                                                                              |
-| 404             | Unknown route or resource                                                                                                                                                                                                          |
-| 409             | Duplicate (`CONFLICT`, `DUPLICATE_KEY`)                                                                                                                                                                                            |
-| 413             | Body over 1mb, or an upload over 5MB                                                                                                                                                                                               |
-| 422             | Well-formed, but a business rule refuses it: `JOB_CLOSED`, `INVALID_STATUS_TRANSITION`, `MINIMUM_INVESTMENT_NOT_MET`, `INVESTMENT_NOT_REFUNDABLE`, `RESUME_REQUIRED`, `SELF_MESSAGE_NOT_ALLOWED`, `SELF_STATUS_CHANGE_NOT_ALLOWED` |
-| 429             | Rate limited (`TOO_MANY_REQUESTS`)                                                                                                                                                                                                 |
-| 500 / 503       | Unexpected failure · readiness probe when MongoDB is unreachable                                                                                                                                                                   |
-
-### Pagination, filtering and sorting
-
-List endpoints accept `page` (default 1), `limit` (default 20, max 100) and
-`sort` — a comma-separated list from that endpoint's allowlist, `-` for
-descending (e.g. `?sort=-minSalary`). A field outside the allowlist is a
-`400`, so `sort` can never reach the database as an arbitrary field name.
-Domain filters (`search`, `role`, `status`, `stage`, …) are documented per
-endpoint in Swagger.
-
-### Key flows
-
-**Register → apply to a job**
-
-```
-POST /api/v1/auth/register  { firstName, lastName, email, password, role: "candidate" }
-POST /api/v1/users/me/cv    multipart/form-data, field "cv"
-POST /api/v1/jobs/:jobId/applications  { coverLetter }   # uses the on-file CV if resumeUrl is omitted
-```
-
-A job accepts applications only while it is `open` **and** its
-`expirationDate` is in the future; an expired posting disappears from the
-public list, refuses applications (`422 JOB_EXPIRED`) and is visible to its
-recruiter at `GET /api/v1/jobs/mine`, flagged `isExpired`. A job that already
-has applications cannot be deleted (`409 JOB_HAS_APPLICATIONS`) — close it
-instead, so candidates keep their history.
-
-**Recruiter reviews an application**
-
-```
-GET   /api/v1/jobs/:jobId/applications          # owning recruiter only
-PATCH /api/v1/applications/:id/status  { "status": "under_review" }
-```
-
-Valid transitions: `submitted → under_review → shortlisted → interview →
-accepted`, with `rejected` reachable from any non-terminal state. Skipping a
-step (e.g. `submitted → accepted`) is rejected with `422 INVALID_STATUS_TRANSITION`.
-If two recruiters move the same application at once, the second gets
-`409 APPLICATION_STATUS_CONFLICT` instead of silently overwriting the first.
-
-**Investor invests in a startup**
-
-```
-PUT  /api/v1/investors/me  { criteria: { minInvestmentCents, maxInvestmentCents, industries, stages } }
-GET  /api/v1/startups/matches                       # startups matching saved criteria
-POST /api/v1/investments  { startupId, amountCents }   # -> { investment, clientSecret }
-```
-
-The client confirms payment with Stripe.js using `clientSecret`. The
-investment is only marked `paid` — and the startup's `raisedSoFarCents`
-incremented — when Stripe's **signed** webhook confirms it
-(`POST /api/v1/payments/webhook`), never from a client-reported "success".
-
-### Example requests
-
-<details>
-<summary>Register + login</summary>
+### With Docker (nothing else to install)
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"firstName":"Jane","lastName":"Doe","email":"jane@example.com","password":"S3cure!Pass","role":"candidate"}'
-# 201 { "success": true, "data": { "user": {...}, "accessToken": "...", "refreshToken": "..." } }
-
-curl -X POST http://localhost:3000/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"jane@example.com","password":"S3cure!Pass"}'
-# 200 { "success": true, "data": { "user": {...}, "accessToken": "...", "refreshToken": "..." } }
-```
-
-</details>
-
-<details>
-<summary>Authenticated request, create + list a job</summary>
-
-```bash
-curl -X POST http://localhost:3000/api/v1/jobs \
-  -H "Authorization: Bearer $RECRUITER_TOKEN" -H "Content-Type: application/json" \
-  -d '{"title":"Backend Engineer","role":"Engineer","description":"...","responsibilities":"...","minSalary":60000,"maxSalary":90000,"salaryType":"yearly","expirationDate":"2027-01-01T00:00:00.000Z"}'
-# 201 { "success": true, "data": { "_id": "...", "title": "Backend Engineer", ... } }
-
-curl http://localhost:3000/api/v1/jobs?role=engineer&page=1&limit=20
-# 200 { "success": true, "data": [ ... ], "meta": { "page": 1, "limit": 20, "total": 1, "totalPages": 1 } }
-```
-
-</details>
-
-<details>
-<summary>Apply to a job</summary>
-
-```bash
-curl -X POST http://localhost:3000/api/v1/jobs/<jobId>/applications \
-  -H "Authorization: Bearer $CANDIDATE_TOKEN" -H "Content-Type: application/json" \
-  -d '{"coverLetter":"I would be a great fit for this role because..."}'
-# 201 { "success": true, "data": { "status": "submitted", ... } }
-# a second attempt for the same job -> 409 CONFLICT, not a silent duplicate
-```
-
-</details>
-
-<details>
-<summary>Failure cases</summary>
-
-```bash
-# missing/invalid token
-curl http://localhost:3000/api/v1/users/me
-# 401 { "success": false, "error": { "code": "UNAUTHORIZED", "message": "Authentication token not provided" } }
-
-# authenticated, but wrong role (candidate trying to post a job)
-curl -X POST http://localhost:3000/api/v1/jobs -H "Authorization: Bearer $CANDIDATE_TOKEN" -d '{}'
-# 403 { "success": false, "error": { "code": "FORBIDDEN", "message": "This action requires one of these roles: recruiter" } }
-
-# invalid input
-curl -X POST http://localhost:3000/api/v1/auth/register -H "Content-Type: application/json" -d '{}'
-# 400 { "success": false, "error": { "code": "VALIDATION_ERROR", "message": "\"firstName\" is required; ..." } }
-```
-
-</details>
-
-All example values above are placeholders — no real credentials or tokens.
-
-## Setup
-
-```bash
-git clone https://github.com/mohatab/recruitment-investment-api.git
-cd recruitment-investment-api
-npm install
-cp .env.example .env   # fill in real values — see below
-npm run dev             # nodemon, or: npm start
-```
-
-Runs at `http://localhost:3000`; Swagger UI at `/api-docs`.
-
-### Health checks
-
-| Endpoint            | Purpose                                                                                                             | 200    | 503                                            |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------- | ------ | ---------------------------------------------- |
-| `GET /health`       | Liveness: the process serves HTTP. Checks no dependencies, so a database outage never restarts a healthy container. | always | never                                          |
-| `GET /health/ready` | Readiness: MongoDB answers a `ping` (2 s timeout) and the server is not draining.                                   | ready  | MongoDB down, or graceful shutdown in progress |
-
-Both are exempt from rate limiting.
-
-### Environment variables
-
-See [`.env.example`](./.env.example) for the full list with descriptions.
-Every variable is validated at startup (`src/config/env.js`). The process
-**exits with code 1 and a message listing every problem** if anything is
-missing or malformed. Always required: `MONGODB_URI`, `JWT_ACCESS_SECRET`,
-`JWT_REFRESH_SECRET` (the two must differ). With `NODE_ENV=production` these
-are also required: a `CORS_ORIGIN` allowlist (not `*`), JWT secrets of 32+
-characters, `APP_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `SMTP_USER` and
-`SMTP_PASS`.
-
-`TRUST_PROXY` is **off by default**. Set it (e.g. `1` for one proxy hop) only
-when the app runs behind a reverse proxy that overwrites `X-Forwarded-For`.
-When it is on and clients can reach the app directly, they can spoof their
-IP and bypass rate limiting.
-
-### Docker
-
-```bash
-cp .env.example .env   # set JWT_ACCESS_SECRET / JWT_REFRESH_SECRET at minimum
+cp .env.example .env    # set JWT_ACCESS_SECRET and JWT_REFRESH_SECRET at minimum
 docker compose up --build
 ```
 
-Starts the API on port 3000 and MongoDB on the compose network only —
-**the database port is deliberately not published to the host**, because the
-container runs without authentication (see
-[SECURITY.md](./docs/SECURITY.md#deployment-requirements-not-enforceable-by-the-code)).
-Reach it with `docker compose exec mongo mongosh`.
+The API listens on `http://localhost:3000`. MongoDB runs on the Compose
+network only — its port is deliberately not published to the host, because the
+development container runs without authentication. Reach it with
+`docker compose exec mongo mongosh`.
 
-The API image carries a `HEALTHCHECK` against `/health` (liveness only, so a
-database outage never restarts a healthy process); `/health/ready` is the one
-that reports 503 when MongoDB is unreachable, and is what a load balancer
-should gate traffic on. Both services use `restart: unless-stopped`, and the
-API container runs read-only apart from the `uploads` volume and a tmpfs
-`/tmp`, as a non-root user. `docker compose stop` sends SIGTERM; the process
-drains connections, closes MongoDB and exits on its own, with a 15s grace
-period before Docker would force it.
-
-Compose defaults to `NODE_ENV=development` so it starts without Stripe/SMTP
-credentials; set `NODE_ENV=production` in `.env` together with the
-production-required variables above, which startup validation enforces.
-
-## Testing
+### Without Docker
 
 ```bash
-npm test               # 677 tests, 36 suites, against an in-memory MongoDB
-npm run test:coverage  # same, with a coverage report
+npm install
+cp .env.example .env    # set MONGODB_URI, JWT_ACCESS_SECRET, JWT_REFRESH_SECRET
+npm run dev             # nodemon; or npm start
+```
+
+Needs a MongoDB instance you can point `MONGODB_URI` at. Every environment
+variable is validated at startup (`src/config/env.js`): the process exits with
+code 1 and a message listing every problem rather than starting misconfigured.
+`NODE_ENV=production` additionally requires a `CORS_ORIGIN` allowlist, 32+
+character JWT secrets, `APP_URL`, Stripe keys and SMTP credentials. See
+[`.env.example`](./.env.example) for the annotated list.
+
+### Run the tests
+
+```bash
+npm test                # 683 tests, 37 suites, in-memory MongoDB — no services needed
+npm run test:coverage   # same, with a coverage report
 npm run lint
 npm run format:check
 npm audit --audit-level=high
 ```
 
-Integration tests spin up `mongodb-memory-server`, so no external database is
-needed; they exercise real request/response cycles through Supertest, and the
-Socket.IO suites run an actual server on an ephemeral port with the real
-client.
+## API surface
 
-What the suite is built to catch, beyond the happy paths:
+| Path            | Purpose                                                                                                                                  |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `/api/v1/*`     | Every application endpoint. The version prefix is part of the contract; there are no unversioned aliases.                                |
+| `/api-docs`     | Interactive Swagger UI, generated from the route annotations, so it cannot document an endpoint that does not exist.                     |
+| `/health`       | Liveness: the process serves HTTP. Checks no dependencies, so a database outage never restarts a healthy container.                      |
+| `/health/ready` | Readiness: MongoDB answers a ping and the server is not draining. `503` otherwise — this is what a load balancer should gate traffic on. |
 
-- **Authorization as a matrix.** Every protected route is enumerated from the
-  real routers and driven through seven invalid-session shapes (missing,
-  malformed, wrong secret, expired, deleted user, deactivated, revoked
-  version), every role against every role-restricted route, a forged `role`
-  claim in a validly signed token, and the verified-email gate. Ownership and
-  IDOR rules are covered separately, resource by resource.
-- **Contract synchronisation.** The OpenAPI document is validated and compared
-  against the routers: documented parameters and request bodies must equal what
-  the Joi schemas accept, input-validating routes must document their `400`, and
-  no schema may leak a secret or require a field it does not define.
-- **Concurrency.** Sixteen tests drive real races — investors oversubscribing a
-  round, duplicate webhook deliveries, double refunds, refresh-token reuse,
-  duplicate applications, simultaneous CV uploads — against the atomic
-  operations that are supposed to make them safe.
-- **Query plans.** Index-sensitive queries assert which index wins and that no
-  collection scan or in-memory sort appears, never elapsed milliseconds.
-- **Mutation testing.** Security and domain invariants are re-verified by
-  breaking them on purpose: 48 of 49 mutants were killed, and the single
-  survivor is documented in place as a redundant guard.
-- **Determinism.** The full suite is run repeatedly and with `--randomize`;
-  order-dependent and polluting tests were found that way and fixed.
+Health probes sit outside `/api/v1` on purpose: they are infrastructure
+endpoints, not product API, and must not move when `v2` arrives.
 
-Coverage at the current baseline: 97.6% statements, 88.3% branches, 97.7%
-functions, 98.4% lines.
-
-## CI/CD
-
-Two database scripts support the schema rather than the app:
-`scripts/db-explain.js` reports the query plan of every important query shape
-against a realistic fixture, and `scripts/sync-indexes.js` (`--dry-run`
-supported) brings a deployed database's indexes in line with the models,
-dropping ones no model declares any more. Neither runs at startup.
-
-`.github/workflows/ci.yml` runs on every push/PR: install → lint → format
-check → test with coverage → `npm audit` (informational) → Docker build.
+Responses use one envelope — `{ success, data, message }`, plus `pagination`
+on lists, and `{ success, error: { code, message, details }, requestId }` on
+failures. The conventions, status codes and `curl` examples are in
+[docs/API.md](./docs/API.md); the per-route authorization rules and the test
+covering each one are in
+[docs/API_ENDPOINT_INVENTORY.md](./docs/API_ENDPOINT_INVENTORY.md).
 
 ## Security
 
-See the [original codebase audit](./docs/history/ORIGINAL_CODEBASE_AUDIT.md)
-for the full list of vulnerabilities found in the original
-codebase and how each was fixed. Current posture:
+Implemented controls, in short — the full contract, including what deployment
+must supply and which risks are accepted, is in
+[docs/SECURITY.md](./docs/SECURITY.md):
 
-- Helmet security headers, CORS allowlist, `express-mongo-sanitize` against
-  NoSQL operator injection, `express-rate-limit` (tighter on auth routes)
-- Centralized error handler — stack traces never reach the client in
-  production; unrecognized errors return a generic message
-- Passwords hashed with bcrypt in a single shared `User` model; password
-  hashes are never serialized in any API response (`select: false` +
-  `toJSON` override)
-- File uploads: content (magic-byte) verification on top of the MIME +
-  extension allowlist, 5MB limit, server-generated storage keys (client
-  filenames and paths are never trusted), no public static file serving —
-  every download goes through an endpoint that checks authorization
-- Stripe: server never touches raw card numbers; payment confirmation is
-  driven by a signature-verified webhook, not client input
-- `npm audit` reports zero vulnerabilities: the moderate `qs` advisories
-  Express 4 pinned transitively are resolved with an `overrides` entry rather
-  than a framework migration (Express 5 remains deferred — see
-  [Express 4 vs 5](#express-4-vs-5))
-- Security headers are asserted one by one, including a `Permissions-Policy`
-  Helmet does not set; see [SECURITY.md](./docs/SECURITY.md) for the full
-  header, CORS and rate-limit contract, the deployment requirements TLS and
-  database authentication impose, and the residual risks
+- JWT access tokens with server-side session revocation; opaque, single-use,
+  hashed refresh tokens with reuse detection
+- Role and ownership authorization enforced in services, never by hiding a URL
+- Joi validation on every input, with NoSQL operator sanitization and a sort
+  allowlist so no user string reaches the database as a field name
+- Rate limiting globally and tighter on auth routes, plus per-socket limits
+- Helmet security headers, a CORS allowlist, and no stack traces in production
+  responses
+- Stripe webhooks authenticated by signature over the raw body; payment state
+  never accepted from a client
+- Private file downloads authorized on the request that reads the bytes, with
+  magic-byte content verification on upload (no malware scanning — that is not
+  implemented, and not claimed)
+- Container hardening and an unpublished database port
 
-## Files and email
+## Testing
 
-### How files are stored
+The suite runs against `mongodb-memory-server`, so it needs no external
+services, and exercises real request cycles through Supertest and a real
+Socket.IO server on an ephemeral port. Beyond happy paths it covers:
 
-Uploads are never served statically. `POST /api/v1/users/me/cv` and the
-contact form accept a multipart file, and the bytes take this path:
+- **Authorization as a matrix** — every protected route × invalid-session
+  shapes, wrong roles, forged claims, ownership and IDOR rules
+- **API contract** — the OpenAPI document validated and compared against the
+  routers and Joi schemas in both directions
+- **Concurrency** — real races: oversubscribed rounds, duplicate webhook
+  deliveries, double refunds, refresh-token reuse, duplicate applications
+- **Query plans** — which index wins, and that no collection scan or in-memory
+  sort appears; never elapsed milliseconds
+- **Mutation testing** — invariants re-verified by breaking them on purpose
+- **Determinism** — the suite passes under `jest --randomize`, which is how
+  order-dependent and polluting tests were found and fixed
+- **Live container checks** — the built image is exercised end to end
+  (authenticated flows, authorization denials, upload/download, Socket.IO
+  delivery, webhook signature rejection) before a release is called done
 
-1. `multer.memoryStorage()` buffers the file — nothing touches disk before it
-   has passed validation, so a rejected upload can never leave a partial file.
-2. The allowlist runs on the declared MIME type **and** the extension
-   (CV: `pdf`/`doc`/`docx`; image: `jpg`/`jpeg`/`png`/`webp`; 5MB; one file
-   per request). SVG and HTML are deliberately absent — browsers execute them.
-3. `common/utils/fileType.js` then checks the **magic bytes**, which the client
-   does not control. A `.exe` renamed `cv.pdf` and sent as `application/pdf`
-   passes steps 1–2 and is rejected here. Empty and truncated files too.
-4. The storage key is generated server-side: `${kind}/${randomUUID()}${ext}`.
-   The client's filename is kept only as a sanitized display name for the
-   download header; it never becomes part of a path.
-5. The storage driver (`common/storage/`) re-validates that the key resolves
-   inside the upload root before touching the filesystem.
-
-The database stores metadata only — `{ key, filename, contentType, sizeBytes,
-uploadedAt }` — and `toJSON` strips `key`, exposing a `downloadPath` instead.
-There is no public URL to leak, guess or share.
-
-### How files are read
-
-| Route                           | Who may read it                                                                             |
-| ------------------------------- | ------------------------------------------------------------------------------------------- |
-| `GET /api/v1/users/me/cv`       | the owner                                                                                   |
-| `GET /api/v1/users/:id/cv`      | the owner, an admin, or a recruiter who received an application from that user to their job |
-| `GET /api/v1/contact/:id/image` | admins only                                                                                 |
-
-Authorization is enforced in the service, on the request that actually reads
-the bytes — not by hiding the URL. Every file response is sent as
-`Content-Disposition: attachment` with `X-Content-Type-Options: nosniff` and
-`Cache-Control: private, no-store`, so nothing uploaded is ever rendered
-inline. A row whose file is missing is a 404 that names no filesystem path.
-
-### Storage drivers and Docker
-
-`STORAGE_DRIVER=local` (default) writes under `UPLOAD_DIR` (`./uploads`);
-`s3` uses any S3-compatible service. **The local driver needs a persistent
-volume**: `docker-compose.yml` mounts the `uploads` volume at `/app/uploads`, so
-files survive a container rebuild. Without a volume, every restart leaves
-metadata rows pointing at files that no longer exist — which degrades to a
-clean 404, not a crash. Multiple API replicas on the local driver each get
-their own disk and will 404 on each other's files; that is the point at which
-to switch to `s3`.
-
-### Email
-
-`SMTP_HOST` (+ `SMTP_PORT`) or `SMTP_SERVICE`, with `SMTP_USER`/`SMTP_PASS`
-and an optional `EMAIL_FROM`. Connection, greeting and socket timeouts are
-bounded (10s/10s/20s) so a hung mail server cannot tie up a request, and a
-failed send is retried once.
-
-**Failure semantics**: sending never throws and never fails the operation that
-triggered it. Registration commits the user and its verification token before
-the mail is dispatched; a password-reset request answers 200 regardless. A
-mail outage therefore costs a user a "resend", not their account or a
-misleading error. The trade-off is deliberate — a real outbox/queue is the
-next increment, and neither flow's guarantees depend on delivery.
-
-**What is never logged**: message bodies, subjects with tokens, recipients'
-full addresses, or SMTP credentials. A failure records only the subject, the
-recipient's _domain_, the error message, the attempt number and whether it
-will retry. Tokens travel in the URL _fragment_
-(`${APP_URL}/reset-password#token=...`), which browsers never send to a
-server, keeping them out of the client app's access logs and `Referer`
-headers. Every user-controlled value in an HTML mail is escaped
-(`common/services/email.templates.js`).
-
-## Money and the investment lifecycle
-
-**Money is always an integer number of minor units** (cents; USD is the only
-supported currency). Every monetary field carries a `Cents` suffix —
-`amountCents`, `totalRaisingCents`, `minInvestmentCents`,
-`raisedSoFarCents`, `reservedCents` — and is an integer in the API, in
-MongoDB and in the call to Stripe, which already expects minor units. Floats
-never touch money: `10.005` is rejected rather than rounded, and no code
-multiplies or divides an amount to store it. Display formatting (dividing by 100) is the client's job; `common/utils/money.js` has the one helper used for
-human-readable text in notifications.
-
-**The funding target is a hard cap.** A startup tracks `raisedSoFarCents`
-(confirmed payments) and `reservedCents` (investments awaiting payment), and
-the invariant is:
+## Project structure
 
 ```
-raisedSoFarCents + reservedCents <= totalRaisingCents
+src/        application code — app/server bootstrap, config, shared middleware
+            and utilities, OpenAPI generation, Socket.IO layer, and one folder
+            per domain under modules/
+test/       unit and integration suites plus shared fixtures and helpers
+scripts/    operational scripts: index sync, query-plan report, data migrations
+docs/       architecture, API, database, security, deployment, migrations
+.github/    CI workflow
 ```
 
-Creating an investment _reserves_ capacity, so two investors racing for the
-last slice of a round cannot both be accepted. The reservation is a single
-conditional update whose filter is the invariant itself
-(`$expr` comparing the document's own fields), so MongoDB enforces it rather
-than this process; read-compare-write cannot do that. A request that would
-exceed the target is refused with `422 FUNDING_TARGET_EXCEEDED`, and
-`GET /api/v1/startups/:id` exposes `remainingCents`.
+Every module follows the same path — `*.routes.js` → `*.controller.js` →
+`*.service.js` (business rules and authorization) → `*.model.js` — with its Joi
+schemas beside it. Routes never touch Mongoose directly. The module list and
+the reasoning behind the layering are in
+[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md#module-structure).
 
-**Lifecycle**
+## Documentation
 
-```
-                 payment confirmed
-   pending ──────────────────────────► paid ──────────► refunded (admin only, terminal)
-      │                                 ▲
-      │ payment failed                  │ retry succeeds (capacity re-checked)
-      ▼                                 │
-    failed ─────────────────────────────┘
-```
+| Topic                                                                  | Document                                                           |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| API conventions, status codes, `curl` examples                         | [docs/API.md](./docs/API.md)                                       |
+| Every route with its authorization rule and covering test              | [docs/API_ENDPOINT_INVENTORY.md](./docs/API_ENDPOINT_INVENTORY.md) |
+| Request lifecycle, auth/payment/realtime flows, error handling         | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)                     |
+| Collections, relationships, indexes and their query plans              | [docs/DATABASE.md](./docs/DATABASE.md)                             |
+| Authentication, authorization, upload/payment controls, accepted risks | [docs/SECURITY.md](./docs/SECURITY.md)                             |
+| Building, configuring and operating the container                      | [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)                         |
+| Breaking changes and the migration scripts for an existing database    | [docs/MIGRATIONS.md](./docs/MIGRATIONS.md)                         |
+| Point-in-time audit and rebuild records                                | [docs/history/](./docs/history/)                                   |
 
-| Transition           | Effect on the startup                                             |
-| -------------------- | ----------------------------------------------------------------- |
-| create → `pending`   | `reservedCents += amount` (refused if it would exceed the target) |
-| `pending` → `paid`   | `reservedCents -= amount`, `raisedSoFarCents += amount`           |
-| `pending` → `failed` | `reservedCents -= amount`                                         |
-| `failed` → `paid`    | `raisedSoFarCents += amount`, only if the round still has room    |
-| `paid` → `refunded`  | `raisedSoFarCents -= amount`                                      |
+[`docs/history/`](./docs/history/) holds snapshots of earlier states of this
+codebase — the original version, the first rebuild, and the audit that started
+the current hardening pass. They are deliberately not updated and describe the
+past, not the current system; they are kept so the decisions in the documents
+above can be checked against what they were reacting to.
 
-Status is never accepted from a client; it changes only through these
-transitions. Refunds are admin-only (decision D3): an investor cannot reclaim
-money already credited to a startup. A refunded investment is terminal — it
-cannot be refunded twice or moved back into a payable state.
+## Deliberately not built
 
-**Task 7 / Task 8 boundary.** Task 7 owns the domain: money representation,
-the funding invariant, the state machine, and the `markPaid` / `markFailed` /
-`refund` service interface. **Task 8 owns Stripe**: webhook idempotency
-bookkeeping (a processed-event log), the outbound idempotency key on
-PaymentIntent creation, verifying event amount and currency against the
-record, `charge.refunded` and dispute events, and retry behaviour. Payment
-processing is **not** production-complete until Task 8 lands.
+Each of these is a product decision or a scale threshold this project has not
+reached, not an oversight. The reasoning is recorded where the constraint
+lives — [DATABASE.md](./docs/DATABASE.md#known-accepted-trade-offs),
+[DEPLOYMENT.md](./docs/DEPLOYMENT.md#scaling-limitations),
+[SECURITY.md](./docs/SECURITY.md#known-accepted-residual-risks):
 
-## Payments (Stripe)
-
-The server never touches card data: it creates a **PaymentIntent** and returns
-its `clientSecret` for the client to confirm with Stripe.js. An investment
-becomes `paid` only when Stripe's **signature-verified webhook** says so — a
-client's "it worked" is never trusted, and creating a PaymentIntent proves
-nothing about payment.
-
-**Idempotency.** Both outbound calls carry a key derived from the investment
-id (`investment-<id>`, `refund-<id>`, `auto-refund-<id>`), so a retry after a
-timeout returns Stripe's original object instead of charging or refunding
-twice. The PaymentIntent id is stored with a conditional update, so concurrent
-creation for one investment settles on a single id.
-
-**Webhook trust model.** `POST /api/v1/payments/webhook` authenticates by
-Stripe signature over the raw body (it takes no user session, and a bearer
-token neither helps nor is required). Stale signatures are rejected by Stripe's
-own tolerance window, which is what stops replay. Every accepted event is
-claimed in a `StripeEvent` log keyed by the unique Stripe event id: duplicate
-and concurrent deliveries are acknowledged without reprocessing, and a failed
-attempt releases its claim so Stripe's retry can run again. Before any state
-moves, the event's PaymentIntent, **amount and currency are compared with the
-stored investment**; a mismatch is recorded and ignored.
-
-| Event                                                      | Effect                                                                                                            |
-| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `payment_intent.succeeded`                                 | credit the investment (`pending`/`failed` → `paid`)                                                               |
-| `payment_intent.payment_failed`, `payment_intent.canceled` | release the reservation (→ `failed`, still revivable)                                                             |
-| `charge.refunded`                                          | reconcile a refund made anywhere, including the Stripe dashboard (`paid` → `refunded`)                            |
-| `charge.dispute.created`, `charge.dispute.closed`          | **observed and logged only** — the domain has no disputed state, and inventing one is not this product's rule yet |
-| anything else                                              | acknowledged and recorded as `no_change`                                                                          |
-
-**Late payments.** If a payment is confirmed after the round has filled up,
-Task 7's cap keeps it uncredited — and Task 8 then **refunds it automatically**
-(idempotently) and stamps `autoRefundedAt` and `stripeRefundId`. The
-investment stays `failed`, and `raisedSoFarCents` never exceeds
-`totalRaisingCents`.
-
-**Refunds** stay admin-only. The status is claimed before Stripe is called, so
-concurrent refunds reach Stripe once; if Stripe refuses, the claim is rolled
-back and the investment stays `paid`. A partial refund has no domain
-representation, so it is logged for an operator rather than guessed at.
-
-**Provider failures** surface as `502 PAYMENT_PROVIDER_ERROR` — an actionable
-upstream failure, not a generic 500 — and no Stripe message, key, request
-payload or signature is ever logged or returned.
-
-## Database design
-
-One `User` collection is the single identity source (replacing four
-duplicate per-module user schemas in the original code). Every domain model
-carries a real foreign key to the user that owns it:
-
-```mermaid
-erDiagram
-    User ||--o{ Job : posts
-    User ||--o{ Application : submits
-    Job ||--o{ Application : receives
-    User ||--o| Startup : owns
-    User ||--o| Investor : owns
-    Investor ||--o{ Investment : makes
-    Startup ||--o{ Investment : receives
-    User ||--o{ Experience : has
-    User ||--o{ Notification : receives
-    User ||--o{ Message : sends
-```
-
-`Application` has a unique compound index on `(job, applicant)` — duplicate
-applications are rejected at the database level, not just checked-then-
-inserted in application code.
-
-## Deployment
-
-Not currently deployed anywhere. What this repository provides is a
-container, a Compose file for local and staging use, and startup validation
-that refuses to run with an unsafe production configuration.
-**[docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)** covers the operational model in
-full: building and configuring the image, the health and readiness contract,
-graceful shutdown, the two persistent volumes and what backing them up means,
-index synchronisation, Stripe webhook setup, and — stated plainly — the things
-a real deployment still has to supply that this repository does not (a
-credentialed and network-isolated database, TLS termination, secret
-management, log shipping).
-
-### Express 4 vs 5
-
-Investigated, not assumed. The `qs` advisory that once motivated this
-migration is already closed on Express 4, by pinning `qs` to `^6.16.0`
-through an `overrides` entry — `npm audit` reports zero vulnerabilities — so
-the security argument for moving no longer applies. The migration is deferred
-on its own merits:
-`express-mongo-sanitize@2.2.0` — the middleware providing NoSQL-injection
-protection on every request — reassigns `req.query` wholesale
-(`req.query = target`), and Express 5 defines `req.query` as a **read-only
-getter**, so that assignment throws at runtime on every request that
-reaches it. That's a concrete, verified break in a security control this
-project actively relies on, not a hypothetical one — confirmed by reading
-the installed middleware's source, not by assumption. `helmet`,
-`express-rate-limit`, and `swagger-ui-express` all declare or are
-compatible with Express 5; this one dependency is the actual blocker.
-Revisit when either `express-mongo-sanitize` ships an Express-5-compatible
-release, or this project replaces it with a sanitizer that mutates
-`req.query`'s existing keys in place instead of reassigning the object.
-
-## Future improvements
-
-Deliberately not built — each one is a product decision or a scale threshold
-this project has not reached, not an oversight:
-
-- **A `Conversation` collection.** The conversation list groups every message a
-  user has exchanged to find their partners and each thread's last message.
-  That is fine at the current scale and measured
-  ([DATABASE.md](./docs/DATABASE.md#query-plans-and-how-they-were-checked)),
-  but a denormalized per-pair document — last message, updated timestamp,
-  unread counts — is what removes the scan. It is a schema change with a data
-  migration, not an index change, which is why Task 11 measured it and left it.
-- **Cursor (keyset) pagination.** Offset paging costs one index key per skipped
-  document, so deep pages get linearly more expensive. The `page`/`limit`
-  contract is part of the public API, so replacing it is an API decision rather
-  than a database one; message history and notification lists are the
-  candidates if deep paging ever becomes a real access pattern.
-- **Horizontal realtime scaling.** Presence is an in-memory map and rooms use
-  the default adapter, so both are per process: a second instance would need
-  Redis (presence store + Socket.IO adapter) before it could be added.
-  Connection-count limiting belongs there too — an in-process counter is
-  bypassed by reconnecting to another instance, so it is the proxy's job.
-- **A durable notification/message outbox.** Delivery is best-effort after a
-  committed write, which is safe (the record is always readable over REST) but
-  means a client offline during the emit only learns about it on its next
-  fetch. A queue would be the next increment if delivery had to be guaranteed.
-- **Message read receipts and unread counts.** Messages carry `delivered`
-  (was the recipient connected when it was written) and nothing else; there is
-  no product requirement for per-message read state, and inventing one would
-  change the client contract. It is also why duplicate sends need no
-  idempotency key — no counter can drift.
-- **Message editing, deletion, search and attachments**, and broadcast read
-  receipts in their own collection rather than a `readBy` array (the array is
-  fine for role-sized audiences, not for many thousands of readers).
-- **Push notifications** (web push / APNs) for users with no socket open.
-- Admin-side moderation tooling for the contact form / broadcasts
-- E2E browser tests are not included; API-level integration tests are
+- A denormalized `Conversation` collection (measured, and left until deep
+  message history justifies the schema change)
+- Cursor pagination — the `page`/`limit` contract is public API, so replacing
+  it is an API decision rather than a database one
+- Horizontal real-time scaling: presence and Socket.IO rooms are per process,
+  so a second instance would need a shared adapter first
+- A durable notification/message outbox — delivery is best-effort after a
+  committed write, and the record is always readable over REST
+- Message read receipts, editing, deletion, search and attachments
+- Push notifications, admin moderation tooling, and browser-level E2E tests
 
 ## License
 

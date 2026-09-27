@@ -17,12 +17,28 @@
   "keywords": [
     "recruitment",
     "investment",
+    "rest-api",
     "express",
-    "mongodb"
+    "mongodb",
+    "mongoose",
+    "jwt",
+    "stripe",
+    "socket-io",
+    "openapi",
+    "jest",
+    "docker"
   ],
   "author": "",
   "license": "MIT",
-  "description": "Node.js/Express API combining a recruitment platform (jobs, applications, CVs) with an investor/startup investment platform, real-time notifications and messaging.",
+  "description": "Node.js/Express REST API for recruitment (jobs, applications, CVs) and startup investment (fundraising rounds, Stripe payments), with JWT auth, role-based authorization, private file storage, email, notifications and Socket.IO messaging.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mohatab/recruitment-investment-api.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mohatab/recruitment-investment-api/issues"
+  },
+  "homepage": "https://github.com/mohatab/recruitment-investment-api#readme",
   "dependencies": {
     "@aws-sdk/client-s3": "^3.687.0",
     "bcryptjs": "^3.0.2",

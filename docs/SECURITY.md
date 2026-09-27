@@ -69,30 +69,30 @@ Admin is **not** a superuser: admin can do only the operations listed below.
 
 ### Rules per resource
 
-| Resource                                | Who                          | Rule                                                                                                            |
-| --------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Own profile `/users/me*`                | any authenticated            | self only; `role`, `email`, `isActive`, verification and `tokenVersion` are not writable                        |
-| `GET /users/:id`                        | any authenticated            | public projection only (name, role, createdAt)                                                                  |
-| `GET /users`, `PATCH /users/:id/status` | admin                        | an admin cannot change their own status                                                                         |
-| Jobs create                             | recruiter, verified email    | `recruiter` = caller                                                                                            |
-| Jobs update/delete                      | recruiter                    | owner of the job only                                                                                           |
-| Apply to a job                          | candidate                    | `applicant` = caller; status always starts at `submitted`                                                       |
-| Applications of a job / change status   | recruiter                    | owner of the job only (a deleted job owns nothing)                                                              |
-| `GET /applications/mine`                | candidate                    | caller's applications only                                                                                      |
-| Startup profile `/startups/me`          | startup                      | one profile, `owner` = caller; `raisedSoFarCents` not writable                                                  |
-| Investor profile `/investors/me`        | investor                     | `owner` = caller                                                                                                |
-| `GET /investors/:id`                    | any authenticated            | public projection: **criteria are private** to the owner                                                        |
-| `GET /startups/matches`                 | investor                     | against the caller's own criteria                                                                               |
-| Create investment                       | investor, verified email     | `investor` = caller; status always `pending`                                                                    |
-| `GET /investments/mine` / `/startup`    | investor / startup           | caller's own / caller's startup's only                                                                          |
-| Refund                                  | **admin only** (decision D3) | investors can't reclaim money credited to a startup                                                             |
-| Notifications list                      | any authenticated            | personal (`user` = caller) + broadcasts to the caller's role                                                    |
-| Mark notification read                  | recipient                    | personal: recipient only; role broadcast: members of that role, recorded **per user** (`readBy`, never exposed) |
-| Send notification                       | admin                        | direct target must exist                                                                                        |
-| Messages send                           | any authenticated            | `sender` = caller; recipient must be another active user                                                        |
-| Message history / conversations         | any authenticated            | room derived from the caller + the other user id                                                                |
-| Experience                              | any authenticated            | `user` = caller; delete by owner only                                                                           |
-| Stripe webhook                          | Stripe signature             | no user                                                                                                         |
+| Resource                                | Who                                | Rule                                                                                                            |
+| --------------------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Own profile `/users/me*`                | any authenticated                  | self only; `role`, `email`, `isActive`, verification and `tokenVersion` are not writable                        |
+| `GET /users/:id`                        | any authenticated                  | public projection only (name, role, createdAt)                                                                  |
+| `GET /users`, `PATCH /users/:id/status` | admin                              | an admin cannot change their own status                                                                         |
+| Jobs create                             | recruiter, verified email          | `recruiter` = caller                                                                                            |
+| Jobs update/delete                      | recruiter                          | owner of the job only                                                                                           |
+| Apply to a job                          | candidate                          | `applicant` = caller; status always starts at `submitted`                                                       |
+| Applications of a job / change status   | recruiter                          | owner of the job only (a deleted job owns nothing)                                                              |
+| `GET /applications/mine`                | candidate                          | caller's applications only                                                                                      |
+| Startup profile `/startups/me`          | startup                            | one profile, `owner` = caller; `raisedSoFarCents` not writable                                                  |
+| Investor profile `/investors/me`        | investor                           | `owner` = caller                                                                                                |
+| `GET /investors/:id`                    | any authenticated                  | public projection: **criteria are private** to the owner                                                        |
+| `GET /startups/matches`                 | investor                           | against the caller's own criteria                                                                               |
+| Create investment                       | investor, verified email           | `investor` = caller; status always `pending`                                                                    |
+| `GET /investments/mine` / `/startup`    | investor / startup                 | caller's own / caller's startup's only                                                                          |
+| Refund                                  | **admin only** (audit decision D3) | investors can't reclaim money credited to a startup                                                             |
+| Notifications list                      | any authenticated                  | personal (`user` = caller) + broadcasts to the caller's role                                                    |
+| Mark notification read                  | recipient                          | personal: recipient only; role broadcast: members of that role, recorded **per user** (`readBy`, never exposed) |
+| Send notification                       | admin                              | direct target must exist                                                                                        |
+| Messages send                           | any authenticated                  | `sender` = caller; recipient must be another active user                                                        |
+| Message history / conversations         | any authenticated                  | room derived from the caller + the other user id                                                                |
+| Experience                              | any authenticated                  | `user` = caller; delete by owner only                                                                           |
+| Stripe webhook                          | Stripe signature                   | no user                                                                                                         |
 
 ### Socket.IO (same rules as REST)
 
@@ -211,7 +211,7 @@ Admin is **not** a superuser: admin can do only the operations listed below.
   | Everything under `/api/v1`           | 300                    | General abuse/scraping brake                                                   |
   | `/api/v1/auth/*`                     | 20                     | Brute force, credential stuffing, mail-bombing via forgot-password             |
   | `POST /users/me/cv`, `POST /contact` | 20                     | Each request can write 5MB to storage, and the contact form is unauthenticated |
-  | Socket.IO events                     | 30 per 10s, per socket | Event flooding (Task 10)                                                       |
+  | Socket.IO events                     | 30 per 10s, per socket | Event flooding                                                                 |
 
   Which policy guards which route is introspected from the real routers in
   `security-headers.test.js`, and the limits themselves are exercised in
@@ -264,8 +264,8 @@ intact.
 
 **Serving it** (`common/utils/fileResponse.js`): authorization is enforced in
 the service on the request that reads the bytes — owner, admin, or a recruiter
-who received an application from that user to one of their own jobs (the Task 4
-rule, not wider). Responses are always
+who received an application from that user to one of their own jobs (that rule
+exactly, not wider). Responses are always
 `Content-Disposition: attachment` + `X-Content-Type-Options: nosniff` +
 `Cache-Control: private, no-store`, so uploaded content is never rendered
 inline or sniffed into something executable. A missing file is a 404 that
@@ -281,7 +281,7 @@ and deep format parsing — a PDF with a valid header is accepted as a PDF.
 - Every socket authenticates at handshake with the same check as HTTP
   (`realtime/socket.js`): no anonymous, deactivated or revoked sessions. A
   socket is disconnected when its token expires or its sessions are revoked.
-- **Event handlers cannot crash the process** (audit C1): every client event
+- **Event handlers cannot crash the process** (pre-hardening audit, finding C1): every client event
   goes through `onEvent`, which validates the payload with Joi, catches
   synchronous throws and async rejections, logs them, and replies with an error
   ack. Internal error messages are never sent to the client.
@@ -337,9 +337,8 @@ and deep format parsing — a PDF with a valid header is accepted as a PDF.
   hardcoded to `1`, which let a client rotate `X-Forwarded-For` to bypass every
   rate limiter when the app was reachable directly (regression test:
   `test/integration/rate-limit.test.js`).
-- No secret is committed: verified by grepping for Stripe/AWS key shapes
-  and PEM headers across the repository (see `FINAL_PROJECT_REPORT.md` for
-  the exact command run and its empty result), and `.env` is gitignored.
+- No secret is committed: verified by grepping the repository for Stripe/AWS
+  key shapes and PEM headers, which matches nothing, and `.env` is gitignored.
 
 ## Dependencies
 
@@ -347,8 +346,18 @@ and deep format parsing — a PDF with a valid header is accepted as a PDF.
 that Express 4 pinned transitively are resolved by an `overrides` entry
 (`qs: ^6.16.0`) rather than by migrating framework: `qs` 6.16 is a patch
 within the range Express already expects, and the whole suite plus the live
-container verify that request parsing still behaves. Express 5 remains
-deferred for the reason in the README ("Express 4 vs 5").
+container verify that request parsing still behaves. Express 5 remains deferred on
+its own merits, investigated rather than assumed: `express-mongo-sanitize@2.2.0`
+— the middleware providing NoSQL-injection protection on every request —
+reassigns `req.query` wholesale (`req.query = target`), and Express 5 defines
+`req.query` as a read-only getter, so that assignment throws at runtime on
+every request that reaches it. That is a concrete break in a security control
+this project actively relies on, confirmed by reading the installed
+middleware's source. `helmet`, `express-rate-limit` and `swagger-ui-express`
+all declare or are compatible with Express 5; this one dependency is the
+blocker. Revisit when `express-mongo-sanitize` ships an Express-5-compatible
+release, or when this project replaces it with a sanitizer that mutates
+`req.query`'s existing keys in place instead of reassigning the object.
 
 `multer` is on the 1.x LTS line, which upstream has deprecated in favour of
 2.x. It carries no open advisory today, and this project uses only
