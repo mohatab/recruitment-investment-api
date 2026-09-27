@@ -14,12 +14,14 @@ permissions:
 jobs:
   test:
     name: Lint, test, audit
-    runs-on: ubuntu-latest
+    # Pinned rather than `ubuntu-latest`: that label migrates to Ubuntu 26 on
+    # 2026-10-19, and a runner image should change when this file says so.
+    runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -34,7 +36,7 @@ jobs:
       # covers the npm cache, so without this the download happens on every
       # run and can outlast the first suite's hook timeout on a cold runner.
       - name: Cache the in-memory MongoDB binary
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/mongodb-binaries
           key: mongodb-binaries-${{ runner.os }}
